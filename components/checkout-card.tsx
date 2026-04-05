@@ -89,11 +89,11 @@ export function CheckoutCard({
         <div className="space-y-3 text-sm text-slate-300">
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-emerald-400" />
-            Total & diskon divalidasi ulang di backend
+            Pembayaran aman dan otomatis
           </div>
           <div className="flex items-center gap-2">
             <Zap className="h-4 w-4 text-brand-300" />
-            Credential tampil otomatis setelah settlement
+            Credential/Akun tampil otomatis setelah settlement
           </div>
           <div className="flex items-center gap-2">
             <Tag className="h-4 w-4 text-fuchsia-300" />
