@@ -402,7 +402,7 @@ export function WaitingPaymentClient({
                 ) : status === "settlement" ? (
                   "Sudah Dibayar"
                 ) : (
-                  "Bayar via Midtrans Snap"
+                  "Bayar Disini"
                 )}
               </Button>
             </Card>
@@ -415,8 +415,7 @@ export function WaitingPaymentClient({
             </div>
 
             <div className="mt-3 text-sm text-slate-300">
-              Bot akan menampilkan status dengan tampilan chat premium dan
-              customer bisa cek pesanan dari Telegram.
+              Bot akan menampilkan status orderan dan credential setelah pembayaran.
             </div>
 
             <a
