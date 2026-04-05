@@ -5,8 +5,8 @@ import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 
 export const metadata: Metadata = {
-  title: "Kograph Premium V2",
-  description: "Premium digital account marketplace with realtime fulfillment"
+  title: "Kograph Premium V2.1",
+  description: "Premium digital account marketplace"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

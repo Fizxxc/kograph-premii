@@ -24,7 +24,7 @@ export async function Header() {
           </div>
           <div>
             <div className="text-base font-bold tracking-wide text-white">{SITE.name}</div>
-            <div className="text-xs text-slate-400">Luxury account marketplace</div>
+            <div className="text-xs text-slate-400">Kograph premium account marketplace</div>
           </div>
         </Link>
 
