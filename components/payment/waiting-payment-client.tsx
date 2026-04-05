@@ -377,10 +377,10 @@ export function WaitingPaymentClient({
                 </div>
                 <div>
                   <div className="font-semibold text-white">
-                    Draggable Snap Launcher
+                    Metode Pembayaran
                   </div>
                   <div className="text-sm text-slate-300">
-                    Geser kartu ini sesuka Anda, lalu klik bayar.
+                    Qris All Pay,Gopay,Bank |Automatic Payment
                   </div>
                 </div>
               </div>
