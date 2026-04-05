@@ -96,7 +96,7 @@ export function WaitingPaymentClient({
 
     return () => {
       // sengaja tidak remove script saat unmount
-      // agar tidak flicker jika user kembali ke halaman ini
+      // agar tidak flicker jika user kembali ke halaman inii
     };
   }, []);
 
