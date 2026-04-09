@@ -5,6 +5,7 @@ import { Megaphone, Send, Webhook } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 
 export function BroadcastPanel() {
   const [message, setMessage] = useState("");
@@ -13,7 +14,7 @@ export function BroadcastPanel() {
 
   async function sendBroadcast() {
     if (message.trim().length < 5) {
-      alert("Tulis pesan broadcast minimal 5 karakter.");
+      toast.error("Tulis pesan broadcast minimal 5 karakter.");
       return;
     }
 
@@ -29,10 +30,10 @@ export function BroadcastPanel() {
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || "Gagal broadcast");
 
-      alert(`Broadcast selesai. Berhasil ke ${json.sentCount} chat.`);
+      toast.success(`Broadcast selesai. Berhasil ke ${json.sentCount} chat.`);
       setMessage("");
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Gagal broadcast");
+      toast.error(error instanceof Error ? error.message : "Gagal broadcast");
     } finally {
       setSending(false);
     }
@@ -46,9 +47,9 @@ export function BroadcastPanel() {
       const json = await response.json();
 
       if (!response.ok) throw new Error(json.error || "Gagal set webhook");
-      alert("Webhook Telegram berhasil dipasang.");
+      toast.success("Webhook Telegram berhasil dipasang.");
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Gagal set webhook");
+      toast.error(error instanceof Error ? error.message : "Gagal set webhook");
     } finally {
       setSettingWebhook(false);
     }

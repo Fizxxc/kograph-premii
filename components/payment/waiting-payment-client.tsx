@@ -18,6 +18,7 @@ import { formatDate, formatRupiah, normalizeStatus } from "@/lib/utils";
 import { getMidtransSnapScriptUrl } from "@/lib/midtrans-client";
 import { SITE } from "@/lib/constants";
 import { RealtimeStatusBadge } from "@/components/status/realtime-status-badge";
+import { toast } from "sonner";
 
 type WaitingPaymentClientProps = {
   transaction: {
@@ -173,12 +174,12 @@ export function WaitingPaymentClient({
 
   async function openSnap() {
     if (typeof window === "undefined" || !window.snap || !isScriptReady) {
-      alert("Midtrans Snap belum siap. Coba refresh halaman lalu ulangi.");
+      toast.error("Midtrans Snap belum siap. Coba refresh halaman lalu ulangi.");
       return;
     }
 
     if (!transaction.snap_token) {
-      alert("Snap token tidak tersedia.");
+      toast.error("Snap token tidak tersedia.");
       return;
     }
 
@@ -194,7 +195,7 @@ export function WaitingPaymentClient({
         },
         onError: (result: unknown) => {
           console.error("[MIDTRANS] Payment error:", result);
-          alert("Terjadi kendala saat membuka pembayaran Midtrans.");
+          toast.error("Terjadi kendala saat membuka pembayaran Midtrans.");
         },
         onClose: () => {
           console.log("[MIDTRANS] Snap popup closed");
@@ -208,12 +209,12 @@ export function WaitingPaymentClient({
   async function copyCredential() {
     if (!accountData) return;
     await navigator.clipboard.writeText(accountData);
-    alert("Credential berhasil disalin.");
+    toast.success("Credential berhasil disalin.");
   }
 
   async function copyStatusToken() {
     await navigator.clipboard.writeText(transaction.status_token);
-    alert("Token status berhasil disalin.");
+    toast.success("Token status berhasil disalin.");
   }
 
   return (

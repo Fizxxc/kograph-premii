@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 
 type Product = {
   id: string;
@@ -39,11 +40,11 @@ export function ProductManager({ products }: { products: Product[] }) {
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || "Gagal update produk");
 
-      alert("Produk berhasil diupdate.");
+      toast.success("Produk berhasil diupdate.");
       setEditing(null);
       router.refresh();
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Gagal update produk");
+      toast.error(error instanceof Error ? error.message : "Gagal update produk");
     } finally {
       setLoading(false);
     }
@@ -58,10 +59,10 @@ export function ProductManager({ products }: { products: Product[] }) {
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || "Gagal menghapus produk");
 
-      alert("Produk berhasil dihapus.");
+      toast.success("Produk berhasil dihapus.");
       router.refresh();
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Gagal menghapus produk");
+      toast.error(error instanceof Error ? error.message : "Gagal menghapus produk");
     }
   }
 

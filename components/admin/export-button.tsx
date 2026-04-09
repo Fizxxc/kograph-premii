@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 export function ExportButton() {
   const [loading, setLoading] = useState(false);
@@ -27,7 +28,7 @@ export function ExportButton() {
       anchor.remove();
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Gagal export");
+      toast.error(error instanceof Error ? error.message : "Gagal export");
     } finally {
       setLoading(false);
     }

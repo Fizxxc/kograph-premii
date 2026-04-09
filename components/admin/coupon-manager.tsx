@@ -6,6 +6,7 @@ import { TicketPercent, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
 
 type Coupon = {
   id: string;
@@ -35,10 +36,10 @@ export function CouponManager({ coupons }: { coupons: Coupon[] }) {
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || "Gagal membuat kupon");
 
-      alert("Kupon berhasil dibuat.");
+      toast.success("Kupon berhasil dibuat.");
       router.refresh();
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Gagal membuat kupon");
+      toast.error(error instanceof Error ? error.message : "Gagal membuat kupon");
     } finally {
       setLoading(false);
     }
@@ -53,7 +54,7 @@ export function CouponManager({ coupons }: { coupons: Coupon[] }) {
 
     const json = await response.json();
     if (!response.ok) {
-      alert(json.error || "Gagal update kupon");
+      toast.error(json.error || "Gagal update kupon");
       return;
     }
 
@@ -68,7 +69,7 @@ export function CouponManager({ coupons }: { coupons: Coupon[] }) {
     const json = await response.json();
 
     if (!response.ok) {
-      alert(json.error || "Gagal hapus kupon");
+      toast.error(json.error || "Gagal hapus kupon");
       return;
     }
 

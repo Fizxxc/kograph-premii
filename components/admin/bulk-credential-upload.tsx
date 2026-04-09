@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { parseCredentialText } from "@/lib/utils";
+import { toast } from "sonner";
 
 export function BulkCredentialUpload({
   products
@@ -27,7 +28,7 @@ export function BulkCredentialUpload({
 
   async function upload() {
     if (!selectedProductId) {
-      alert("Pilih produk terlebih dahulu.");
+      toast.error("Pilih produk terlebih dahulu.");
       return;
     }
 
@@ -43,11 +44,11 @@ export function BulkCredentialUpload({
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || "Bulk upload gagal");
 
-      alert(`${json.inserted} credential berhasil diupload.`);
+      toast.success(`${json.inserted} credential berhasil diupload.`);
       setRawText("");
       router.refresh();
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Bulk upload gagal");
+      toast.error(error instanceof Error ? error.message : "Bulk upload gagal");
     } finally {
       setLoading(false);
     }

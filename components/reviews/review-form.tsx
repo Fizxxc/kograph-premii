@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 
 export function ReviewForm({ productId }: { productId: string }) {
   const router = useRouter();
@@ -25,11 +26,11 @@ export function ReviewForm({ productId }: { productId: string }) {
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || "Gagal mengirim ulasan");
 
-      alert("Ulasan berhasil dikirim dan akan otomatis tampil di channel testimoni jika bot aktif.");
+      toast.success("Ulasan berhasil dikirim dan akan otomatis tampil di channel testimoni jika bot aktif.");
       setComment("");
       router.refresh();
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Gagal mengirim ulasan");
+      toast.error(error instanceof Error ? error.message : "Gagal mengirim ulasan");
     } finally {
       setLoading(false);
     }

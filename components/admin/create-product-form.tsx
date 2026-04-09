@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 
 export function CreateProductForm() {
   const router = useRouter();
@@ -21,11 +22,11 @@ export function CreateProductForm() {
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || "Gagal membuat produk");
 
-      alert("Produk berhasil dibuat.");
+      toast.success("Produk berhasil dibuat.");
       formRef.current?.reset();
       router.refresh();
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Gagal membuat produk");
+      toast.error(error instanceof Error ? error.message : "Gagal membuat produk");
     } finally {
       setLoading(false);
     }
