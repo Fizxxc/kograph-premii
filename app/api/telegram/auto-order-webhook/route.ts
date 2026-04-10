@@ -1,12 +1,5 @@
 import { NextResponse } from "next/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-import { QUICK_TOPUP_AMOUNTS, SITE } from "@/lib/constants";
-import {
-  adjustWalletByTelegramAdmin,
-  createTelegramProductOrder,
-  createTelegramTopup,
-  getProfileByTelegramId
-} from "@/lib/telegram-commerce";
 import {
   answerTelegramCallbackQuery,
   buildAutoOrderButtons,
@@ -17,28 +10,56 @@ import {
   sendTelegramPhoto,
   upsertTelegramUser
 } from "@/lib/telegram";
+import {
+  adjustWalletByTelegramAdmin,
+  createTelegramProductOrder,
+  createTelegramTopup,
+  getProfileByTelegramId
+} from "@/lib/telegram-commerce";
+import { PANEL_RAM_PRESETS, getPanelPresetByKey } from "@/lib/panel-packages";
+import { SITE, QUICK_TOPUP_AMOUNTS } from "@/lib/constants";
 import { formatRupiah } from "@/lib/utils";
 
 function topupMenuKeyboard() {
   return {
     inline_keyboard: [
-      ...QUICK_TOPUP_AMOUNTS.map((amount) => [
-        { text: `Top up ${formatRupiah(amount)}`, callback_data: `topup:${amount}` }
-      ]),
+      ...QUICK_TOPUP_AMOUNTS.map((amount) => [{ text: `Top up ${formatRupiah(amount)}`, callback_data: `topup:${amount}` }]),
       [{ text: "⬅️ Kembali", callback_data: "home:menu" }]
     ]
   };
 }
 
-function paymentChoiceKeyboard(productId: string) {
+function panelPlanKeyboard(productId: string) {
   return {
     inline_keyboard: [
-      [{ text: "⚡ Bayar QRIS Dinamis", callback_data: `buy:${productId}:midtrans` }],
-      [{ text: "👛 Bayar dengan saldo web", callback_data: `buy:${productId}:balance` }],
-      [{ text: "💳 Top up saldo", callback_data: "topup:menu" }],
+      ...PANEL_RAM_PRESETS.map((plan) => [
+        { text: `${plan.label} • ${formatRupiah(plan.price)}`, callback_data: `plan:${productId}:${plan.key}` }
+      ]),
       [{ text: "⬅️ Kembali", callback_data: "catalog:list" }]
     ]
   };
+}
+
+function paymentChoiceKeyboard(productId: string, panelPlanKey?: string) {
+  const suffix = panelPlanKey ? `:${panelPlanKey}` : "";
+  const selected = panelPlanKey ? getPanelPresetByKey(panelPlanKey) : null;
+  return {
+    inline_keyboard: [
+      ...(selected ? [[{ text: `Paket: ${selected.label} • ${formatRupiah(selected.price)}`, callback_data: "noop:selected" }]] : []),
+      [{ text: "⚡ Bayar QRIS Dinamis", callback_data: `buy:${productId}:midtrans${suffix}` }],
+      [{ text: "👛 Bayar dengan saldo web", callback_data: `buy:${productId}:balance${suffix}` }],
+      [{ text: "💳 Top up saldo", callback_data: "topup:menu" }],
+      [{ text: "⬅️ Kembali", callback_data: panelPlanKey ? `planback:${productId}` : "catalog:list" }]
+    ]
+  };
+}
+
+function buildPaymentLinks(result: any) {
+  const buttons: any[] = [];
+  if (result.paymentUrl) buttons.push([{ text: "🔗 Link bayar backup", url: result.paymentUrl }]);
+  if (result.waitingUrl) buttons.push([{ text: "🌐 Buka halaman order web", url: result.waitingUrl }]);
+  buttons.push(...buildCheckBotButtons().inline_keyboard);
+  return { inline_keyboard: buttons };
 }
 
 async function sendCatalog(chatId: number, messageId?: number) {
@@ -56,13 +77,11 @@ async function sendCatalog(chatId: number, messageId?: number) {
     : [
         `🛒 <b>Katalog Auto Order ${SITE.name}</b>`,
         "",
-        `Pilih produk dari tombol di bawah. Untuk produk panel, server dibuat otomatis dan tampil auto ready.`,
+        `Untuk panel bot WA, paket RAM / CPU / disk dipilih setelah Anda menekan produk panelnya.`,
         "",
         ...products.map((p) => {
           const isPanel = (p.service_type || "credential") === "pterodactyl";
-          return `• <b>${p.name}</b> — ${formatRupiah(p.price)} • ${
-            isPanel ? "auto ready" : `stok ${p.stock}`
-          } • terjual ${p.sold_count || 0}`;
+          return `• <b>${p.name}</b> — ${isPanel ? "pilih paket 1GB s/d Unlimited" : formatRupiah(p.price)} • ${isPanel ? "auto ready" : `stok ${p.stock}`} • terjual ${p.sold_count || 0}`;
         })
       ].join("\n");
 
@@ -70,17 +89,12 @@ async function sendCatalog(chatId: number, messageId?: number) {
     ? buildAutoOrderButtons()
     : {
         inline_keyboard: [
-          ...products.map((p) => [
-            { text: `${p.name} (${formatRupiah(p.price)})`, callback_data: `product:${p.id}` }
-          ]),
+          ...products.map((p) => [{ text: `${p.name}`, callback_data: `product:${p.id}` }]),
           [{ text: "⬅️ Menu utama", callback_data: "home:menu" }]
         ]
       };
 
-  if (messageId) {
-    return editTelegramMessage(chatId, messageId, text, { bot: "auto", reply_markup: keyboard });
-  }
-
+  if (messageId) return editTelegramMessage(chatId, messageId, text, { bot: "auto", reply_markup: keyboard });
   return sendTelegramMessage(chatId, text, { bot: "auto", reply_markup: keyboard });
 }
 
@@ -109,6 +123,7 @@ async function showHome(chatId: number, messageId?: number) {
     "",
     `Bot ini bisa dipakai untuk:`,
     `• buat order produk secara otomatis`,
+    `• order panel bot WhatsApp dengan pilihan paket 1GB sampai Unlimited`,
     `• bayar pakai QRIS dinamis atau saldo yang tersimpan di web`,
     `• top up saldo langsung dari Telegram`,
     `• lihat ringkasan saldo akun yang terhubung`,
@@ -116,12 +131,7 @@ async function showHome(chatId: number, messageId?: number) {
     `Sebelum memakai auto order, pastikan Telegram ID Anda sudah diisi di halaman profile web agar order tidak tertukar akun.`
   ].join("\n");
 
-  if (messageId) {
-    return editTelegramMessage(chatId, messageId, text, {
-      bot: "auto",
-      reply_markup: buildAutoOrderButtons()
-    });
-  }
+  if (messageId) return editTelegramMessage(chatId, messageId, text, { bot: "auto", reply_markup: buildAutoOrderButtons() });
   return sendTelegramMessage(chatId, text, { bot: "auto", reply_markup: buildAutoOrderButtons() });
 }
 
@@ -135,12 +145,7 @@ async function showWalletInfo(chatId: number, messageId?: number) {
     `<b>Saldo</b>: ${formatRupiah(profile.balance || 0)}`
   ].join("\n");
 
-  if (messageId) {
-    return editTelegramMessage(chatId, messageId, text, {
-      bot: "auto",
-      reply_markup: topupMenuKeyboard()
-    });
-  }
+  if (messageId) return editTelegramMessage(chatId, messageId, text, { bot: "auto", reply_markup: topupMenuKeyboard() });
   return sendTelegramMessage(chatId, text, { bot: "auto", reply_markup: topupMenuKeyboard() });
 }
 
@@ -153,7 +158,8 @@ async function showPaymentResult(chatId: number, sourceMessageId: number, result
         "",
         `<b>Order ID</b>: <code>${result.orderId}</code>`,
         `<b>Nominal</b>: ${formatRupiah(result.amount)}`,
-        `<b>Pembayaran</b>: QRIS dinamis`
+        `<b>Pembayaran</b>: QRIS dinamis`,
+        `Jika gambar QR tidak muncul, pakai link backup pada tombol di bawah.`
       ]
     : [
         `🧾 <b>Order berhasil dibuat</b>`,
@@ -161,23 +167,32 @@ async function showPaymentResult(chatId: number, sourceMessageId: number, result
         `<b>Order ID</b>: <code>${result.orderId}</code>`,
         `<b>Total</b>: ${formatRupiah(result.finalAmount)}`,
         `<b>Token cek</b>: <code>${result.statusToken}</code>`,
-        result.paymentUrl
-          ? `<b>Pembayaran</b>: QRIS dinamis`
-          : `<b>Pembayaran</b>: Dipotong dari saldo web Anda`,
+        result.paymentUrl ? `<b>Pembayaran</b>: QRIS dinamis` : `<b>Pembayaran</b>: Dipotong dari saldo web Anda`,
+        result.paymentUrl ? `Jika gambar QR tidak muncul, pakai link backup pada tombol di bawah.` : `Order ini langsung diproses dari saldo yang tersimpan di web.`,
         "",
         `Setelah bayar, Anda bisa cek status di @${SITE.botUsername}.`
       ];
 
+  const replyMarkup = buildPaymentLinks(result);
+
   if (result.paymentQrUrl) {
-    return sendTelegramPhoto(chatId, result.paymentQrUrl, lines.join("\n"), {
-      bot: "auto",
-      reply_markup: buildCheckBotButtons()
-    });
+    try {
+      return await sendTelegramPhoto(chatId, result.paymentQrUrl, lines.join("\n"), {
+        bot: "auto",
+        reply_markup: replyMarkup
+      });
+    } catch {
+      return sendTelegramMessage(chatId, [...lines, `<b>Link bayar backup</b>: ${result.paymentUrl || "-"}`].join("\n"), {
+        bot: "auto",
+        reply_markup: replyMarkup,
+        disable_web_page_preview: false
+      });
+    }
   }
 
   return sendTelegramMessage(chatId, lines.join("\n"), {
     bot: "auto",
-    reply_markup: buildCheckBotButtons(),
+    reply_markup: replyMarkup,
     disable_web_page_preview: false
   });
 }
@@ -234,11 +249,7 @@ export async function POST(request: Request) {
         }
 
         const profile = await ensureLinkedProfile(chatId);
-        const topup = await createTelegramTopup({
-          userId: profile.id,
-          amount,
-          telegramId: String(chatId)
-        });
+        const topup = await createTelegramTopup({ userId: profile.id, amount, telegramId: String(chatId) });
         await showPaymentResult(chatId, message.message_id, topup, true);
         return NextResponse.json({ ok: true });
       }
@@ -320,6 +331,18 @@ export async function POST(request: Request) {
 
       if (data.startsWith("product:")) {
         const productId = data.split(":")[1] || "";
+        const admin = createAdminSupabaseClient();
+        const { data: product } = await admin.from("products").select("id, name, service_type").eq("id", productId).maybeSingle();
+        const isPanel = (product?.service_type || "credential") === "pterodactyl";
+
+        if (isPanel) {
+          await editTelegramMessage(chatId, messageId, `Pilih paket panel bot WA untuk <b>${product?.name || "produk panel"}</b>.`, {
+            bot: "auto",
+            reply_markup: panelPlanKeyboard(productId)
+          });
+          return NextResponse.json({ ok: true });
+        }
+
         await editTelegramMessage(chatId, messageId, "Pilih metode pembayaran untuk produk ini.", {
           bot: "auto",
           reply_markup: paymentChoiceKeyboard(productId)
@@ -327,20 +350,49 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true });
       }
 
-      if (data.startsWith("buy:")) {
-        const [, productId, paymentMethodRaw] = data.split(":");
-        const paymentMethod = paymentMethodRaw === "balance" ? "balance" : "midtrans";
+      if (data.startsWith("planback:")) {
+        const productId = data.split(":")[1] || "";
+        await editTelegramMessage(chatId, messageId, "Pilih lagi paket panel bot WA yang Anda inginkan.", {
+          bot: "auto",
+          reply_markup: panelPlanKeyboard(productId)
+        });
+        return NextResponse.json({ ok: true });
+      }
 
+      if (data.startsWith("plan:")) {
+        const [, productId, planKey] = data.split(":");
+        const selected = getPanelPresetByKey(planKey);
+        await editTelegramMessage(
+          chatId,
+          messageId,
+          [
+            `Paket yang dipilih: <b>${selected.label}</b>`,
+            `RAM ${selected.memoryMb === 0 ? "Unlimited" : `${Math.round(selected.memoryMb / 1024)}GB`} • Disk ${selected.diskMb === 0 ? "Unlimited" : `${Math.max(1, Math.round(selected.diskMb / 1024))}GB`} • CPU ${selected.cpuPercent === 0 ? "Unlimited" : `${selected.cpuPercent}%`}`,
+            `Harga ${formatRupiah(selected.price)}`
+          ].join("\n"),
+          {
+            bot: "auto",
+            reply_markup: paymentChoiceKeyboard(productId || "", planKey)
+          }
+        );
+        return NextResponse.json({ ok: true });
+      }
+
+      if (data.startsWith("buy:")) {
+        const [, productId, paymentMethodRaw, planKey] = data.split(":");
+        const paymentMethod = paymentMethodRaw === "balance" ? "balance" : "midtrans";
         const result = await createTelegramProductOrder({
           userId: (await ensureLinkedProfile(chatId)).id,
           telegramId: String(chatId),
           productId: productId || "",
-          paymentMethod
+          paymentMethod,
+          panelPlanKey: planKey || undefined
         });
-
         await showPaymentResult(chatId, messageId, result, false);
         return NextResponse.json({ ok: true });
       }
+
+      if (data === "noop:selected") return NextResponse.json({ ok: true });
     }
 
     return NextResponse.json({ ok: true });

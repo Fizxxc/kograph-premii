@@ -6,6 +6,7 @@ import {
   preparePterodactylServerConfig
 } from "@/lib/pterodactyl";
 import { sendTelegramMessage } from "@/lib/telegram";
+import { getDefaultWhatsappBotEnvironment } from "@/lib/panel-packages";
 
 function safeUsername(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12) || `user${Date.now().toString().slice(-6)}`;
@@ -31,13 +32,18 @@ async function notifyTelegramProduct(tx: any, productName: string, fulfillmentDa
     `<b>Status</b>: settlement`
   ];
 
+  if (fulfillmentData?.panel_plan_label) {
+    lines.push(`<b>Paket</b>: ${fulfillmentData.panel_plan_label}`);
+  }
+
   if (fulfillmentData?.type === "pterodactyl") {
     lines.push(
       "",
       `<b>Panel URL</b>: ${fulfillmentData.panel_url || "-"}`,
       `<b>Username</b>: <code>${fulfillmentData.panel_username || "-"}</code>`,
       `<b>Email</b>: <code>${fulfillmentData.panel_email || "-"}</code>`,
-      `<b>Password</b>: <code>${fulfillmentData.panel_password || "-"}</code>`
+      `<b>Password</b>: <code>${fulfillmentData.panel_password || "-"}</code>`,
+      `<b>Spesifikasi</b>: RAM ${fulfillmentData.memory_text || "-"} • Disk ${fulfillmentData.disk_text || "-"} • CPU ${fulfillmentData.cpu_text || "-"}`
     );
   }
 
@@ -97,11 +103,7 @@ export async function fulfillProductOrder(orderId: string) {
     const { data, error: rpcError } = await admin.rpc("fulfill_transaction", { p_order_id: orderId });
     if (rpcError) throw new Error(rpcError.message);
 
-    await admin
-      .from("products")
-      .update({ sold_count: Number(product.sold_count || 0) + 1 })
-      .eq("id", product.id);
-
+    await admin.from("products").update({ sold_count: Number(product.sold_count || 0) + 1 }).eq("id", product.id);
     await notifyTelegramProduct(tx, product.name, null);
     return data;
   }
@@ -123,20 +125,17 @@ export async function fulfillProductOrder(orderId: string) {
   const preparedConfig = await preparePterodactylServerConfig({
     nest_id: Number(panelConfig.nest_id || process.env.PTERODACTYL_DEFAULT_NEST_ID || 1),
     egg_id: Number(panelConfig.egg_id || process.env.PTERODACTYL_DEFAULT_EGG_ID || 1),
-    allocation_id: Number(
-      panelConfig.allocation_id || process.env.PTERODACTYL_DEFAULT_ALLOCATION_ID || 1
-    ),
+    allocation_id: Number(panelConfig.allocation_id || process.env.PTERODACTYL_DEFAULT_ALLOCATION_ID || 1),
     location_id: Number(panelConfig.location_id || process.env.PTERODACTYL_DEFAULT_LOCATION_ID || 1),
-    memory: Number(panelConfig.memory || 1024),
-    disk: Number(panelConfig.disk || 10240),
-    cpu: Number(panelConfig.cpu || 100),
+    memory: Number(pendingFulfillment.memory ?? panelConfig.memory ?? 1024),
+    disk: Number(pendingFulfillment.disk ?? panelConfig.disk ?? 2048),
+    cpu: Number(pendingFulfillment.cpu ?? panelConfig.cpu ?? 40),
     databases: Number(panelConfig.databases || 1),
     backups: Number(panelConfig.backups || 1),
     allocations: Number(panelConfig.allocations || 1),
     startup: panelConfig.startup || undefined,
-    docker_image:
-      panelConfig.docker_image || process.env.PTERODACTYL_DEFAULT_DOCKER_IMAGE || undefined,
-    environment: panelConfig.environment || {}
+    docker_image: panelConfig.docker_image || process.env.PTERODACTYL_DEFAULT_DOCKER_IMAGE || undefined,
+    environment: getDefaultWhatsappBotEnvironment(panelConfig.environment || {})
   });
 
   const panelUser = await createPterodactylUser({
@@ -155,6 +154,7 @@ export async function fulfillProductOrder(orderId: string) {
   });
 
   const fulfillmentData = {
+    ...pendingFulfillment,
     type: "pterodactyl",
     telegram_id: (tx as any).telegram_id || null,
     requested_username: preferredUsername,
@@ -166,7 +166,10 @@ export async function fulfillProductOrder(orderId: string) {
     server_id: server.id,
     server_uuid: server.uuid,
     server_identifier: server.identifier,
-    note: "Login panel sudah dibuat otomatis. Simpan email dan password panel Anda dengan baik."
+    note: "Login panel sudah dibuat otomatis. Simpan email dan password panel Anda dengan baik.",
+    memory_text: pendingFulfillment.memory_text || (Number(pendingFulfillment.memory) === 0 ? "Unlimited" : `${Math.round(Number(pendingFulfillment.memory || 1024) / 1024)}GB`),
+    disk_text: pendingFulfillment.disk_text || (Number(pendingFulfillment.disk) === 0 ? "Unlimited" : `${Math.max(1, Math.round(Number(pendingFulfillment.disk || 2048) / 1024))}GB`),
+    cpu_text: pendingFulfillment.cpu_text || (Number(pendingFulfillment.cpu) === 0 ? "Unlimited" : `${pendingFulfillment.cpu || 40}%`)
   };
 
   const { error: txUpdateError } = await admin
@@ -175,28 +178,16 @@ export async function fulfillProductOrder(orderId: string) {
     .eq("id", (tx as any).id);
   if (txUpdateError) throw new Error(txUpdateError.message);
 
-  await admin
-    .from("products")
-    .update({ sold_count: Number(product.sold_count || 0) + 1 })
-    .eq("id", product.id);
+  await admin.from("products").update({ sold_count: Number(product.sold_count || 0) + 1 }).eq("id", product.id);
 
   if ((tx as any).coupon_code) {
-    const { data: coupon } = await admin
-      .from("coupons")
-      .select("used_count")
-      .eq("code", (tx as any).coupon_code)
-      .maybeSingle();
-
+    const { data: coupon } = await admin.from("coupons").select("used_count").eq("code", (tx as any).coupon_code).maybeSingle();
     if (coupon) {
-      await admin
-        .from("coupons")
-        .update({ used_count: Number((coupon as any).used_count || 0) + 1 })
-        .eq("code", (tx as any).coupon_code);
+      await admin.from("coupons").update({ used_count: Number((coupon as any).used_count || 0) + 1 }).eq("code", (tx as any).coupon_code);
     }
   }
 
   await notifyTelegramProduct(tx, product.name, fulfillmentData);
-
   return { fulfilled: true, fulfillment_data: fulfillmentData };
 }
 

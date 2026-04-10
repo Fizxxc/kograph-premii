@@ -47,7 +47,7 @@ export async function Header() {
   ];
 
   return (
-    <header className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/60 backdrop-blur-2xl">
+    <header className="z-50 border-b border-white/10 bg-slate-950/75 backdrop-blur-2xl md:sticky md:top-0">
       <div className="container-shell py-3 md:py-4">
         <div className="flex items-center justify-between gap-4">
           <Link href="/" className="min-w-0 flex-1 md:flex-none">
@@ -57,7 +57,7 @@ export async function Header() {
               </div>
               <div className="min-w-0">
                 <div className="truncate text-base font-bold tracking-wide text-white md:text-2xl">{SITE.name}</div>
-                <div className="truncate text-xs text-slate-400 md:text-sm">Premium account, panel, dan saldo deposit</div>
+                <div className="truncate text-xs text-slate-400 md:text-sm">Premium account, panel bot WA, dan saldo deposit</div>
               </div>
             </div>
           </Link>
@@ -108,40 +108,40 @@ export async function Header() {
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-            {mobileLinks.map((item) => {
-              const Icon = item.icon;
-              const commonClassName =
-                "flex min-h-[74px] flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white/5 px-2 py-3 text-center text-[12px] text-slate-100 transition hover:bg-white/10";
+          <div className="hide-scrollbar -mx-1 overflow-x-auto pb-1">
+            <div className="grid min-w-[720px] grid-cols-6 gap-2 px-1">
+              {mobileLinks.map((item) => {
+                const Icon = item.icon;
+                const commonClassName =
+                  "flex min-h-[78px] flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white/5 px-2 py-3 text-center text-[12px] text-slate-100 transition hover:bg-white/10";
 
-              return item.external ? (
-                <a key={item.label} href={item.href} target="_blank" rel="noreferrer" className={commonClassName}>
-                  <Icon className="h-4 w-4" />
-                  <span className="leading-tight">{item.label}</span>
-                </a>
-              ) : (
-                <Link key={item.label} href={item.href} className={commonClassName}>
-                  <Icon className="h-4 w-4" />
-                  <span className="leading-tight">{item.label}</span>
-                </Link>
-              );
-            })}
-
-            {user ? (
-              <div className="col-span-3 sm:col-span-4">
-                <LogoutButton />
-              </div>
-            ) : (
-              <>
-                <Link href="/login" className="flex min-h-[46px] items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-100">
-                  Login
-                </Link>
-                <Link href="/register" className="col-span-2 flex min-h-[46px] items-center justify-center rounded-2xl bg-brand-500 px-4 py-3 text-sm font-medium text-white sm:col-span-3">
-                  Register
-                </Link>
-              </>
-            )}
+                return item.external ? (
+                  <a key={item.label} href={item.href} target="_blank" rel="noreferrer" className={commonClassName}>
+                    <Icon className="h-4 w-4" />
+                    <span className="leading-tight">{item.label}</span>
+                  </a>
+                ) : (
+                  <Link key={item.label} href={item.href} className={commonClassName}>
+                    <Icon className="h-4 w-4" />
+                    <span className="leading-tight">{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
           </div>
+
+          {user ? (
+            <LogoutButton />
+          ) : (
+            <div className="grid grid-cols-3 gap-2">
+              <Link href="/login" className="flex min-h-[46px] items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-100">
+                Login
+              </Link>
+              <Link href="/register" className="col-span-2 flex min-h-[46px] items-center justify-center rounded-2xl bg-brand-500 px-4 py-3 text-sm font-medium text-white">
+                Register
+              </Link>
+            </div>
+          )}
         </div>
       </div>
     </header>

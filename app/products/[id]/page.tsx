@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { formatDate, formatRupiah } from "@/lib/utils";
 import { SITE } from "@/lib/constants";
-import { PANEL_RAM_PRESETS } from "@/lib/panel-packages";
+import { PANEL_RAM_PRESETS, getPanelPresetPriceRange } from "@/lib/panel-packages";
 
 export const dynamic = "force-dynamic";
 
@@ -59,13 +59,12 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
 
   const ratingAverage =
     reviews && reviews.length > 0
-      ? (
-          reviews.reduce((sum, review) => sum + Number(review.rating), 0) / reviews.length
-        ).toFixed(1)
+      ? (reviews.reduce((sum, review) => sum + Number(review.rating), 0) / reviews.length).toFixed(1)
       : null;
 
   const isPanel = (product.service_type || "credential") === "pterodactyl";
   const stockBadgeText = isPanel ? "Auto Ready 24/7" : product.stock > 0 ? `Stock ${product.stock}` : "Sold Out";
+  const panelRange = getPanelPresetPriceRange();
 
   return (
     <div className="space-y-8">
@@ -76,10 +75,8 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
           <div className="space-y-5 p-6">
             <div className="flex flex-wrap items-center gap-3">
               <Badge>{product.category}</Badge>
-              <Badge className={isPanel || product.stock > 0 ? "text-emerald-300" : "text-rose-300"}>
-                {stockBadgeText}
-              </Badge>
-              <Badge className="text-brand-200">{isPanel ? "Panel Pterodactyl" : "Akun / Credential"}</Badge>
+              <Badge className={isPanel || product.stock > 0 ? "text-emerald-300" : "text-rose-300"}>{stockBadgeText}</Badge>
+              <Badge className="text-brand-200">{isPanel ? "Panel Bot WA" : "Akun / Credential"}</Badge>
               <Badge className="text-slate-300">Terjual {product.sold_count || 0}</Badge>
               {product.featured && <Badge className="text-fuchsia-300">Featured</Badge>}
               {ratingAverage && (
@@ -92,19 +89,30 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
 
             <div>
               <h1 className="text-4xl font-black text-white">{product.name}</h1>
-              <div className="mt-3 text-2xl font-bold text-brand-300">{formatRupiah(product.price)}</div>
+              <div className="mt-3 text-2xl font-bold text-brand-300">
+                {isPanel ? `${formatRupiah(panelRange.min)} - ${formatRupiah(panelRange.max)}` : formatRupiah(product.price)}
+              </div>
+              {isPanel && <div className="mt-2 text-sm text-slate-400">Khusus panel bot WhatsApp dengan pilihan paket 1GB sampai Unlimited.</div>}
             </div>
 
             <p className="leading-7 text-slate-300">{product.description}</p>
 
             {isPanel && (
               <div className="rounded-3xl border border-brand-500/20 bg-brand-500/10 p-5">
-                <div className="text-lg font-semibold text-white">Pilihan RAM panel populer</div>
+                <div className="text-lg font-semibold text-white">Pilihan paket panel bot WA</div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                   {PANEL_RAM_PRESETS.map((item) => (
                     <div key={item.key} className="rounded-2xl border border-white/10 bg-slate-950/50 p-4 text-sm text-slate-300">
-                      <div className="font-semibold text-white">{item.label}</div>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="font-semibold text-white">{item.label}</div>
+                        <div className="font-bold text-brand-200">{formatRupiah(item.price)}</div>
+                      </div>
                       <div className="mt-1 text-xs text-slate-400">{item.tagline}</div>
+                      <div className="mt-2 text-xs leading-6 text-slate-300">
+                        RAM {item.memoryMb === 0 ? "Unlimited" : `${Math.round(item.memoryMb / 1024)}GB`}<br />
+                        Disk {item.diskMb === 0 ? "Unlimited" : `${Math.max(1, Math.round(item.diskMb / 1024))}GB`}<br />
+                        CPU {item.cpuPercent === 0 ? "Unlimited" : `${item.cpuPercent}%`}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -144,40 +152,38 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
                 const profileValue = Array.isArray(review.profiles) ? review.profiles[0] : review.profiles;
 
                 return (
-                  <div key={review.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <div key={review.id} className="rounded-2xl border border-white/10 bg-white/5 p-5">
                     <div className="flex items-center justify-between gap-3">
-                      <div className="font-semibold text-white">
-                        {(profileValue as { full_name?: string } | null)?.full_name || "Verified Buyer"}
+                      <div>
+                        <div className="font-semibold text-white">{profileValue?.full_name || "Customer"}</div>
+                        <div className="text-xs text-slate-400">{formatDate(review.created_at)}</div>
                       </div>
-                      <div className="text-sm text-slate-400">{formatDate(review.created_at)}</div>
+                      <div className="flex items-center gap-1 text-yellow-300">
+                        {Array.from({ length: Number(review.rating) }).map((_, index) => (
+                          <Star key={index} className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                        ))}
+                      </div>
                     </div>
-
-                    <div className="mt-2 flex gap-1">
-                      {Array.from({ length: 5 }).map((_, index) => (
-                        <Star key={index} className={`h-4 w-4 ${index < Number(review.rating) ? "fill-yellow-400 text-yellow-400" : "text-slate-600"}`} />
-                      ))}
-                    </div>
-
-                    <p className="mt-3 text-sm leading-6 text-slate-300">{review.comment}</p>
+                    <div className="mt-3 text-sm leading-7 text-slate-300">{review.comment}</div>
                   </div>
                 );
               })}
             </div>
           ) : (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-5 text-slate-300">Belum ada ulasan untuk produk ini.</div>
+            <div className="text-slate-300">Belum ada ulasan untuk produk ini.</div>
           )}
         </Card>
 
-        {user && canReview && !alreadyReviewed ? (
-          <ReviewForm productId={product.id} />
-        ) : (
-          <Card>
-            <div className="text-lg font-semibold text-white">Review Access</div>
-            <p className="mt-2 text-sm leading-6 text-slate-300">
-              Form ulasan hanya tampil untuk pembeli yang sudah memiliki transaksi settlement pada produk ini dan belum pernah mengirim review.
-            </p>
-          </Card>
-        )}
+        <Card>
+          <div className="mb-4 text-2xl font-bold text-white">Tulis Ulasan</div>
+          {canReview && !alreadyReviewed ? (
+            <ReviewForm productId={product.id} />
+          ) : alreadyReviewed ? (
+            <div className="text-slate-300">Anda sudah memberikan ulasan untuk produk ini.</div>
+          ) : (
+            <div className="text-slate-300">Ulasan bisa diberikan setelah Anda menyelesaikan pembelian produk ini.</div>
+          )}
+        </Card>
       </div>
     </div>
   );

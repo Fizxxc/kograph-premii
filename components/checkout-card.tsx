@@ -20,6 +20,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SITE } from "@/lib/constants";
 import { formatRupiah } from "@/lib/utils";
+import { PANEL_RAM_PRESETS, getPanelPresetByKey } from "@/lib/panel-packages";
 
 type CheckoutProduct = {
   id: string;
@@ -46,9 +47,13 @@ export function CheckoutCard({
   const [loading, setLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"midtrans" | "balance">("midtrans");
   const [panelUsername, setPanelUsername] = useState("");
+  const [panelPlanKey, setPanelPlanKey] = useState(PANEL_RAM_PRESETS[0].key);
+
+  const selectedPanelPlan = getPanelPresetByKey(panelPlanKey);
+  const checkoutPrice = isPanel ? selectedPanelPlan.price : product.price;
 
   const stockLabel = useMemo(() => {
-    if (isPanel) return "Auto Ready 24/7 • dibuat otomatis setelah pembayaran berhasil";
+    if (isPanel) return "Auto Ready 24/7 • panel bot WA dibuat otomatis setelah pembayaran berhasil";
     if (stock <= 0) return "Stok habis";
     if (stock <= 5) return `Sisa ${stock} item`;
     return `Stok tersedia: ${stock}`;
@@ -100,7 +105,8 @@ export function CheckoutCard({
           productId: product.id,
           couponCode: couponCode.trim(),
           paymentMethod,
-          panelUsername: panelUsername.trim()
+          panelUsername: panelUsername.trim(),
+          panelPlanKey
         })
       });
 
@@ -133,14 +139,19 @@ export function CheckoutCard({
   const buttonDisabled =
     loading ||
     (!isPanel && stock <= 0) ||
-    (paymentMethod === "balance" && userBalance < product.price);
+    (paymentMethod === "balance" && userBalance < checkoutPrice);
 
   return (
     <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
       <Card className="space-y-5">
         <div>
           <div className="text-sm uppercase tracking-[0.2em] text-slate-400">Secure Checkout</div>
-          <div className="mt-2 text-3xl font-bold text-white">{formatRupiah(product.price)}</div>
+          <div className="mt-2 text-3xl font-bold text-white">{formatRupiah(checkoutPrice)}</div>
+          {isPanel && (
+            <div className="mt-1 text-sm text-brand-200">
+              Paket dipilih: {selectedPanelPlan.label} • RAM {selectedPanelPlan.memoryMb === 0 ? "Unlimited" : `${Math.round(selectedPanelPlan.memoryMb / 1024)}GB`} • CPU {selectedPanelPlan.cpuPercent === 0 ? "Unlimited" : `${selectedPanelPlan.cpuPercent}%`}
+            </div>
+          )}
           <div className={`mt-2 text-sm ${isPanel || stock > 0 ? "text-emerald-300" : "text-rose-300"}`}>
             {stockLabel}
           </div>
@@ -159,7 +170,7 @@ export function CheckoutCard({
           {isPanel ? (
             <div className="flex items-center gap-2">
               <ServerCog className="h-4 w-4 text-brand-300" />
-              Panel Pterodactyl dibuat otomatis, tidak mengambil stok akun manual seperti produk premium biasa
+              Satu produk panel dengan banyak pilihan spesifikasi khusus bot WhatsApp
             </div>
           ) : (
             <div className="flex items-center gap-2">
@@ -170,16 +181,49 @@ export function CheckoutCard({
         </div>
 
         {isPanel && (
-          <div className="space-y-2 rounded-2xl border border-brand-500/20 bg-brand-500/10 p-4">
-            <label className="text-sm font-medium text-white">Username panel</label>
-            <Input
-              placeholder="Contoh: kographpanel1"
-              value={panelUsername}
-              onChange={(e) => setPanelUsername(e.target.value)}
-            />
-            <div className="flex items-start gap-2 text-xs leading-6 text-slate-300">
-              <UserRound className="mt-0.5 h-4 w-4 text-brand-300" />
-              Cukup isi username. Sistem akan membuat username login, email login, dan password panel secara otomatis saat pembayaran berhasil.
+          <div className="space-y-4 rounded-2xl border border-brand-500/20 bg-brand-500/10 p-4">
+            <div>
+              <label className="text-sm font-medium text-white">Username panel</label>
+              <Input
+                placeholder="Contoh: kographpanel1"
+                value={panelUsername}
+                onChange={(e) => setPanelUsername(e.target.value)}
+                className="mt-2"
+              />
+              <div className="mt-2 flex items-start gap-2 text-xs leading-6 text-slate-300">
+                <UserRound className="mt-0.5 h-4 w-4 text-brand-300" />
+                Cukup isi username. Sistem akan membuat username login, email login, dan password panel secara otomatis saat pembayaran berhasil.
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-2 text-sm font-medium text-white">Pilih paket panel bot WA</div>
+              <div className="grid max-h-[340px] gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+                {PANEL_RAM_PRESETS.map((plan) => {
+                  const active = panelPlanKey === plan.key;
+                  return (
+                    <button
+                      key={plan.key}
+                      type="button"
+                      onClick={() => setPanelPlanKey(plan.key)}
+                      className={`rounded-2xl border p-3 text-left transition ${
+                        active
+                          ? "border-brand-400 bg-brand-500/15 text-white"
+                          : "border-white/10 bg-slate-950/50 text-slate-300 hover:bg-white/10"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="font-semibold">{plan.label}</div>
+                        <div className="text-sm font-bold">{formatRupiah(plan.price)}</div>
+                      </div>
+                      <div className="mt-1 text-xs text-slate-400">{plan.tagline}</div>
+                      <div className="mt-2 text-xs leading-5 text-slate-300">
+                        RAM {plan.memoryMb === 0 ? "Unlimited" : `${Math.round(plan.memoryMb / 1024)}GB`} • Disk {plan.diskMb === 0 ? "Unlimited" : `${Math.max(1, Math.round(plan.diskMb / 1024))}GB`} • CPU {plan.cpuPercent === 0 ? "Unlimited" : `${plan.cpuPercent}%`}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}
@@ -245,7 +289,7 @@ export function CheckoutCard({
           ) : paymentMethod === "balance" ? (
             "Bayar dengan Saldo"
           ) : isPanel ? (
-            "Buat Panel Sekarang"
+            "Buat Panel WA Sekarang"
           ) : stock <= 0 ? (
             "Stok Habis"
           ) : (

@@ -5,7 +5,7 @@ import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 
 export const metadata: Metadata = {
-  title: "Kograph Premium V2.1",
+  title: "Kograph Premium V2.2",
   description: "Premium digital account marketplace"
 };
 
@@ -14,7 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="id">
       <body>
         <Header />
-        <main className="container-shell py-8">{children}</main>
+        <main className="container-shell py-6 md:py-8">{children}</main>
         <Footer />
         <Toaster richColors position="top-right" />
       </body>

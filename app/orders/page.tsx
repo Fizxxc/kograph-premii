@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Copy, Download, ServerCog, Wallet } from "lucide-react";
+import { Download, ExternalLink, ServerCog, Wallet } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
@@ -47,36 +47,20 @@ export default async function OrdersPage() {
         <div className="space-y-5">
           {orders.map((order) => {
             const product = Array.isArray(order.products) ? order.products[0] : order.products;
-            const credential = Array.isArray(order.app_credentials)
-              ? order.app_credentials[0]
-              : order.app_credentials;
-            const fulfillmentData = (order as any).fulfillment_data;
+            const credential = Array.isArray(order.app_credentials) ? order.app_credentials[0] : order.app_credentials;
+            const fulfillmentData = (order as any).fulfillment_data || {};
             const isPanel = (product as any)?.service_type === "pterodactyl";
 
             return (
               <Card key={order.id} className="grid gap-5 lg:grid-cols-[140px_1fr_auto]">
-                <img
-                  src={product?.image_url || "/placeholder.png"}
-                  alt={product?.name || "Product"}
-                  className="h-36 w-full rounded-2xl object-cover"
-                />
+                <img src={product?.image_url || "/placeholder.png"} alt={product?.name || "Product"} className="h-36 w-full rounded-2xl object-cover" />
 
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge>{product?.category || "Produk"}</Badge>
-                    <Badge className={isPanel ? "text-brand-200" : "text-slate-300"}>
-                      {isPanel ? "Panel Pterodactyl" : "Akun / Credential"}
-                    </Badge>
-                    <Badge
-                      className={
-                        (order as any).payment_method === "balance"
-                          ? "text-emerald-300"
-                          : "text-amber-300"
-                      }
-                    >
-                      {(order as any).payment_method === "balance"
-                        ? "Bayar dengan saldo"
-                        : "Bayar dengan Midtrans"}
+                    <Badge className={isPanel ? "text-brand-200" : "text-slate-300"}>{isPanel ? "Panel Pterodactyl" : "Akun / Credential"}</Badge>
+                    <Badge className={(order as any).payment_method === "balance" ? "text-emerald-300" : "text-amber-300"}>
+                      {(order as any).payment_method === "balance" ? "Bayar dengan saldo" : "Bayar dengan Midtrans"}
                     </Badge>
                     <RealtimeStatusBadge transactionId={order.id} initialStatus={order.status} />
                   </div>
@@ -93,6 +77,8 @@ export default async function OrdersPage() {
                     <div>Kupon: {order.coupon_code || "-"}</div>
                     <div>{formatDate(order.created_at)}</div>
                     <div>Token: {order.status_token}</div>
+                    {isPanel && fulfillmentData.panel_plan_label && <div>Paket: {fulfillmentData.panel_plan_label}</div>}
+                    {isPanel && fulfillmentData.memory_text && <div>RAM {fulfillmentData.memory_text} • Disk {fulfillmentData.disk_text || '-'} • CPU {fulfillmentData.cpu_text || '-'}</div>}
                   </div>
 
                   {credential?.account_data && (
@@ -101,17 +87,18 @@ export default async function OrdersPage() {
                     </div>
                   )}
 
-                  {isPanel && fulfillmentData && (
+                  {isPanel && fulfillmentData && (order.status === 'settlement' || fulfillmentData.panel_url) && (
                     <div className="rounded-2xl border border-brand-500/20 bg-brand-500/10 p-4 text-sm text-slate-200">
                       <div className="mb-2 flex items-center gap-2 font-semibold text-white">
                         <ServerCog className="h-4 w-4 text-brand-300" />
                         Detail panel yang berhasil dibuat
                       </div>
-                      <div>Panel URL: {fulfillmentData.panel_url || "-"}</div>
-                      <div>Username Login: {fulfillmentData.panel_username || "-"}</div>
-                      <div>Email Login: {fulfillmentData.panel_email || "-"}</div>
-                      <div>Password Login: {fulfillmentData.panel_password || "-"}</div>
-                      <div>Server UUID: {fulfillmentData.server_uuid || "-"}</div>
+                      <div>Paket: {fulfillmentData.panel_plan_label || '-'}</div>
+                      <div>Panel URL: {fulfillmentData.panel_url || '-'}</div>
+                      <div>Username Login: {fulfillmentData.panel_username || '-'}</div>
+                      <div>Email Login: {fulfillmentData.panel_email || '-'}</div>
+                      <div>Password Login: {fulfillmentData.panel_password || '-'}</div>
+                      <div>Server UUID: {fulfillmentData.server_uuid || '-'}</div>
                     </div>
                   )}
                 </div>
@@ -123,9 +110,7 @@ export default async function OrdersPage() {
                     </Link>
                   ) : (
                     <Link href={`/products/${product?.id}`}>
-                      <Button variant="secondary" className="w-full">
-                        Lihat Produk
-                      </Button>
+                      <Button variant="secondary" className="w-full">Lihat Produk</Button>
                     </Link>
                   )}
 
@@ -137,6 +122,15 @@ export default async function OrdersPage() {
                       </div>
                       Order ini diproses langsung dari saldo akun Anda.
                     </div>
+                  )}
+
+                  {(order as any).payment_method === "qris" && order.status === 'pending' && (fulfillmentData.payment_fallback_url || fulfillmentData.payment_qr_url) && (
+                    <a href={fulfillmentData.payment_fallback_url || fulfillmentData.payment_qr_url} target="_blank" rel="noreferrer">
+                      <Button variant="outline" className="w-full">
+                        <ExternalLink className="mr-2 h-4 w-4" />
+                        Link Bayar Backup
+                      </Button>
+                    </a>
                   )}
 
                   <a href={`/api/invoice/${order.order_id}`} target="_blank" rel="noreferrer">

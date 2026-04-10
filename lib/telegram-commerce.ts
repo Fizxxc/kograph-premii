@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createMidtransQrisTransaction } from "@/lib/midtrans";
 import { fulfillProductOrder } from "@/lib/fulfillment";
+import { getDefaultWhatsappBotEnvironment, getPanelPresetByKey } from "@/lib/panel-packages";
 
 function calculateDiscount(input: {
   type: "fixed" | "percentage";
@@ -33,17 +34,20 @@ export async function createTelegramProductOrder(input: {
   productId: string;
   couponCode?: string;
   paymentMethod?: "midtrans" | "balance";
+  panelPlanKey?: string;
 }) {
   const admin = createAdminSupabaseClient();
   const { data: product } = await admin
     .from("products")
-    .select("id, name, price, stock, service_type")
+    .select("id, name, price, stock, service_type, pterodactyl_config")
     .eq("id", input.productId)
     .single();
 
   if (!product) throw new Error("Produk tidak ditemukan.");
 
   const isPanel = (product.service_type || "credential") === "pterodactyl";
+  const panelPlan = isPanel ? getPanelPresetByKey(input.panelPlanKey) : null;
+
   if (!isPanel && Number(product.stock || 0) <= 0) throw new Error("Stok produk sedang habis.");
 
   if (!isPanel) {
@@ -63,7 +67,7 @@ export async function createTelegramProductOrder(input: {
 
   let discountAmount = 0;
   let appliedCouponCode: string | null = null;
-  const amount = Number(product.price || 0);
+  const amount = isPanel ? Number(panelPlan?.price || 0) : Number(product.price || 0);
 
   if (input.couponCode) {
     const code = input.couponCode.trim().toUpperCase();
@@ -101,6 +105,8 @@ export async function createTelegramProductOrder(input: {
   const orderId = `KGP-TG-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
   const statusToken = crypto.randomBytes(8).toString("hex").toUpperCase();
   const paymentMethod = input.paymentMethod || "midtrans";
+  const appUrl = String(process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/$/, "");
+  const waitingUrl = appUrl ? `${appUrl}/waiting-payment/${orderId}` : `/waiting-payment/${orderId}`;
 
   const basePayload = {
     order_id: orderId,
@@ -118,7 +124,23 @@ export async function createTelegramProductOrder(input: {
       ? {
           type: "pterodactyl_pending",
           requested_username: `tg${String(input.telegramId).replace(/\D/g, "")}`.slice(0, 12),
-          requested_from: "telegram"
+          requested_from: "telegram",
+          panel_plan_key: panelPlan?.key,
+          panel_plan_label: panelPlan?.label,
+          memory: panelPlan?.memoryMb,
+          disk: panelPlan?.diskMb,
+          cpu: panelPlan?.cpuPercent,
+          memory_text:
+            panelPlan?.memoryMb === 0
+              ? "Unlimited"
+              : `${Math.round((panelPlan?.memoryMb || 0) / 1024)}GB`,
+          disk_text:
+            panelPlan?.diskMb === 0
+              ? "Unlimited"
+              : `${Math.max(1, Math.round((panelPlan?.diskMb || 0) / 1024))}GB`,
+          cpu_text: panelPlan?.cpuPercent === 0 ? "Unlimited" : `${panelPlan?.cpuPercent}%`,
+          plan_price: panelPlan?.price,
+          product_mode: "single-panel-multi-option"
         }
       : null
   };
@@ -138,7 +160,7 @@ export async function createTelegramProductOrder(input: {
       p_user_id: input.userId,
       p_amount: -finalAmount,
       p_type: "purchase",
-      p_description: `Pembelian ${product.name} via auto order bot (${orderId})`,
+      p_description: `Pembelian ${product.name}${panelPlan ? ` paket ${panelPlan.label}` : ""} via auto order bot (${orderId})`,
       p_admin_user_id: null
     });
     if (walletError) throw new Error(walletError.message);
@@ -148,6 +170,8 @@ export async function createTelegramProductOrder(input: {
       orderId,
       paymentUrl: null,
       paymentQrUrl: null,
+      snapUrl: waitingUrl,
+      waitingUrl,
       finalAmount,
       statusToken,
       paymentMethod,
@@ -159,7 +183,12 @@ export async function createTelegramProductOrder(input: {
     orderId,
     amount: finalAmount,
     itemDetails: [
-      { id: product.id, price: finalAmount, quantity: 1, name: String(product.name).slice(0, 50) }
+      {
+        id: product.id,
+        price: finalAmount,
+        quantity: 1,
+        name: `${String(product.name).slice(0, 34)}${panelPlan ? ` ${panelPlan.label}` : ""}`.slice(0, 50)
+      }
     ],
     customerDetails: {
       first_name: profile?.full_name || `user_${input.telegramId}`,
@@ -173,7 +202,10 @@ export async function createTelegramProductOrder(input: {
     fulfillment_data: {
       ...(basePayload.fulfillment_data || {}),
       payment_type: "qris",
-      payment_qr_url: qris.qrUrl || null
+      payment_qr_url: qris.qrUrl || null,
+      payment_actions: qris.actions || null,
+      payment_fallback_url: waitingUrl,
+      whatsapp_environment: getDefaultWhatsappBotEnvironment((product as any).pterodactyl_config?.environment || {})
     }
   });
   if (insertError) throw new Error(insertError.message);
@@ -182,6 +214,8 @@ export async function createTelegramProductOrder(input: {
     orderId,
     paymentUrl: qris.qrUrl,
     paymentQrUrl: qris.qrUrl,
+    snapUrl: qris.qrUrl,
+    waitingUrl,
     finalAmount,
     statusToken,
     paymentMethod: "qris",
@@ -199,6 +233,8 @@ export async function createTelegramTopup(input: {
 
   const { data: profile } = await admin.from("profiles").select("full_name").eq("id", input.userId).single();
   const orderId = `KGP-TOPUP-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+  const appUrl = String(process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/$/, "");
+  const waitingUrl = appUrl ? `${appUrl}/profile` : "/profile";
 
   const qris = await createMidtransQrisTransaction({
     orderId,
@@ -219,7 +255,14 @@ export async function createTelegramTopup(input: {
   });
   if (error) throw new Error(error.message);
 
-  return { orderId, amount: input.amount, paymentUrl: qris.qrUrl, paymentQrUrl: qris.qrUrl };
+  return {
+    orderId,
+    amount: input.amount,
+    paymentUrl: qris.qrUrl,
+    paymentQrUrl: qris.qrUrl,
+    snapUrl: qris.qrUrl,
+    waitingUrl
+  };
 }
 
 export async function adjustWalletByTelegramAdmin(input: {

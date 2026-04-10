@@ -5,6 +5,7 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { midtransSnap } from "@/lib/midtrans";
 import { fulfillProductOrder } from "@/lib/fulfillment";
 import { preparePterodactylServerConfig } from "@/lib/pterodactyl";
+import { getDefaultWhatsappBotEnvironment, getPanelPresetByKey } from "@/lib/panel-packages";
 
 function calculateDiscount(input: {
   type: "fixed" | "percentage";
@@ -13,9 +14,7 @@ function calculateDiscount(input: {
   maxDiscount: number | null;
 }) {
   let discount = input.type === "fixed" ? input.value : Math.floor((input.baseAmount * input.value) / 100);
-
   if (input.maxDiscount && discount > input.maxDiscount) discount = input.maxDiscount;
-
   return Math.max(0, Math.min(discount, input.baseAmount));
 }
 
@@ -35,6 +34,7 @@ export async function POST(request: Request) {
     const couponCode = String(body.couponCode ?? "").trim().toUpperCase();
     const paymentMethod = String(body.paymentMethod ?? "midtrans").trim().toLowerCase();
     const panelUsername = String(body.panelUsername ?? "").trim();
+    const panelPlanKey = String(body.panelPlanKey ?? "1gb").trim().toLowerCase();
 
     if (!productId) {
       return NextResponse.json({ error: "productId wajib diisi" }, { status: 400 });
@@ -51,6 +51,7 @@ export async function POST(request: Request) {
     }
 
     const isPanel = ((product as { service_type?: string | null }).service_type || "credential") === "pterodactyl";
+    const panelPlan = isPanel ? getPanelPresetByKey(panelPlanKey) : null;
 
     if (!isPanel && Number((product as { stock?: number }).stock || 0) <= 0) {
       return NextResponse.json({ error: "Stok produk sedang habis" }, { status: 400 });
@@ -79,21 +80,25 @@ export async function POST(request: Request) {
         egg_id: Number(panelConfig.egg_id || process.env.PTERODACTYL_DEFAULT_EGG_ID || 1),
         allocation_id: Number(panelConfig.allocation_id || process.env.PTERODACTYL_DEFAULT_ALLOCATION_ID || 1),
         location_id: Number(panelConfig.location_id || process.env.PTERODACTYL_DEFAULT_LOCATION_ID || 1),
-        memory: Number(panelConfig.memory || 1024),
-        disk: Number(panelConfig.disk || 10240),
-        cpu: Number(panelConfig.cpu || 100),
+        memory: Number(panelPlan?.memoryMb ?? panelConfig.memory ?? 1024),
+        disk: Number(panelPlan?.diskMb ?? panelConfig.disk ?? 2048),
+        cpu: Number(panelPlan?.cpuPercent ?? panelConfig.cpu ?? 40),
         databases: Number(panelConfig.databases || 1),
         backups: Number(panelConfig.backups || 1),
         allocations: Number(panelConfig.allocations || 1),
         startup: panelConfig.startup || undefined,
         docker_image: panelConfig.docker_image || process.env.PTERODACTYL_DEFAULT_DOCKER_IMAGE || undefined,
-        environment: panelConfig.environment || {}
+        environment: getDefaultWhatsappBotEnvironment(panelConfig.environment || {})
       });
     }
 
-    const { data: profile } = await admin.from("profiles").select("full_name, balance, telegram_id").eq("id", user.id).single();
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("full_name, balance, telegram_id")
+      .eq("id", user.id)
+      .single();
 
-    const amount = Number((product as { price: number }).price);
+    const amount = isPanel ? Number(panelPlan?.price || 0) : Number((product as { price: number }).price);
     let discountAmount = 0;
     let appliedCouponCode: string | null = null;
 
@@ -149,7 +154,17 @@ export async function POST(request: Request) {
         ? {
             type: "pterodactyl_pending",
             requested_username: panelUsername,
-            requested_from: "web"
+            requested_from: "web",
+            panel_plan_key: panelPlan?.key,
+            panel_plan_label: panelPlan?.label,
+            memory: panelPlan?.memoryMb,
+            disk: panelPlan?.diskMb,
+            cpu: panelPlan?.cpuPercent,
+            disk_text: panelPlan?.diskMb === 0 ? "Unlimited" : `${Math.max(1, Math.round((panelPlan?.diskMb || 0) / 1024))}GB`,
+            memory_text: panelPlan?.memoryMb === 0 ? "Unlimited" : `${Math.round((panelPlan?.memoryMb || 0) / 1024)}GB`,
+            cpu_text: panelPlan?.cpuPercent === 0 ? "Unlimited" : `${panelPlan?.cpuPercent}%`,
+            plan_price: panelPlan?.price,
+            product_mode: "single-panel-multi-option"
           }
         : null
     };
@@ -164,22 +179,22 @@ export async function POST(request: Request) {
         ...baseTransactionPayload,
         snap_token: "BALANCE_PAYMENT"
       });
-
       if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
 
       const { error: balanceError } = await admin.rpc("apply_wallet_adjustment", {
         p_user_id: user.id,
         p_amount: -finalAmount,
         p_type: "purchase",
-        p_description: `Pembelian ${(product as { name: string }).name} (${orderId}) via saldo`,
+        p_description: `Pembelian ${(product as { name: string }).name}${panelPlan ? ` paket ${panelPlan.label}` : ""} (${orderId}) via saldo`,
         p_admin_user_id: null
       });
-
       if (balanceError) return NextResponse.json({ error: balanceError.message }, { status: 500 });
 
       await fulfillProductOrder(orderId);
       return NextResponse.json({ success: true, orderId, redirectTo: `/waiting-payment/${orderId}` });
     }
+
+    const itemName = isPanel && panelPlan ? `${String((product as { name: string }).name).slice(0, 34)} ${panelPlan.label}` : String((product as { name: string }).name).slice(0, 50);
 
     const snapPayload = {
       transaction_details: {
@@ -192,7 +207,7 @@ export async function POST(request: Request) {
           id: (product as { id: string }).id,
           price: finalAmount,
           quantity: 1,
-          name: String((product as { name: string }).name).slice(0, 50)
+          name: itemName
         }
       ],
       customer_details: {
@@ -205,7 +220,13 @@ export async function POST(request: Request) {
 
     const { error: insertError } = await admin.from("transactions").insert({
       ...baseTransactionPayload,
-      snap_token: snapResponse.token
+      snap_token: snapResponse.token,
+      fulfillment_data: isPanel
+        ? {
+            ...(baseTransactionPayload.fulfillment_data || {}),
+            payment_redirect_url: snapResponse.redirect_url || null
+          }
+        : null
     });
 
     if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
@@ -214,6 +235,7 @@ export async function POST(request: Request) {
       success: true,
       orderId,
       snapToken: snapResponse.token,
+      snapRedirectUrl: snapResponse.redirect_url,
       redirectUrl: `/waiting-payment/${orderId}`
     });
   } catch (error) {
