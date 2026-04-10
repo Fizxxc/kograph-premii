@@ -20,7 +20,8 @@ const panelConfigExample = `{
   "databases": 1,
   "backups": 1,
   "allocations": 1,
-  "docker_image": "ghcr.io/pterodactyl/yolks:nodejs_18"
+  "docker_image": "ghcr.io/pterodactyl/yolks:nodejs_18",
+  "startup": "npm start"
 }`;
 
 export function CreateProductForm() {
@@ -130,7 +131,7 @@ export function CreateProductForm() {
             />
             <div className="flex items-start gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-slate-200">
               <ShieldCheck className="mt-0.5 h-4 w-4 text-emerald-300" />
-              Produk panel akan tampil sebagai auto ready di katalog. User hanya memasukkan username panel, lalu email login dan password login dibuat otomatis.
+              Produk panel akan tampil sebagai auto ready di katalog. User hanya memasukkan username panel, lalu email login dan password login dibuat otomatis. Jika egg punya startup atau environment wajib, sistem akan mencoba mengambil default dari egg terlebih dulu.
             </div>
           </div>
         )}

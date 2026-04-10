@@ -1,38 +1,31 @@
 import { NextResponse } from "next/server";
-import {
-  answerTelegramCallbackQuery,
-  buildAutoOrderButtons,
-  buildCheckBotButtons,
-  sendTelegramMessage,
-  upsertTelegramUser
-} from "@/lib/telegram";
+import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { QUICK_TOPUP_AMOUNTS, SITE } from "@/lib/constants";
 import {
   adjustWalletByTelegramAdmin,
   createTelegramProductOrder,
   createTelegramTopup,
   getProfileByTelegramId
 } from "@/lib/telegram-commerce";
-import { QUICK_TOPUP_AMOUNTS, SITE } from "@/lib/constants";
+import {
+  answerTelegramCallbackQuery,
+  buildAutoOrderButtons,
+  buildCheckBotButtons,
+  deleteTelegramMessage,
+  editTelegramMessage,
+  sendTelegramMessage,
+  sendTelegramPhoto,
+  upsertTelegramUser
+} from "@/lib/telegram";
 import { formatRupiah } from "@/lib/utils";
-import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-
-function isTelegramAdmin(chatId: number) {
-  return String(process.env.TELEGRAM_ADMIN_CHAT_IDS || "")
-    .split(",")
-    .map((v) => v.trim())
-    .filter(Boolean)
-    .includes(String(chatId));
-}
 
 function topupMenuKeyboard() {
   return {
     inline_keyboard: [
-      QUICK_TOPUP_AMOUNTS.map((amount) => ({
-        text: `Top up ${formatRupiah(amount)}`,
-        callback_data: `topup:${amount}`
-      })),
-      [{ text: "Lihat katalog", callback_data: "catalog:list" }],
-      [{ text: "Cek order", url: `https://t.me/${SITE.botUsername}` }]
+      ...QUICK_TOPUP_AMOUNTS.map((amount) => [
+        { text: `Top up ${formatRupiah(amount)}`, callback_data: `topup:${amount}` }
+      ]),
+      [{ text: "⬅️ Kembali", callback_data: "home:menu" }]
     ]
   };
 }
@@ -40,14 +33,15 @@ function topupMenuKeyboard() {
 function paymentChoiceKeyboard(productId: string) {
   return {
     inline_keyboard: [
-      [{ text: "Bayar Midtrans", callback_data: `buy:${productId}:midtrans` }],
-      [{ text: "Bayar dengan saldo web", callback_data: `buy:${productId}:balance` }],
-      [{ text: "Top up saldo", callback_data: "topup:menu" }]
+      [{ text: "⚡ Bayar QRIS Dinamis", callback_data: `buy:${productId}:midtrans` }],
+      [{ text: "👛 Bayar dengan saldo web", callback_data: `buy:${productId}:balance` }],
+      [{ text: "💳 Top up saldo", callback_data: "topup:menu" }],
+      [{ text: "⬅️ Kembali", callback_data: "catalog:list" }]
     ]
   };
 }
 
-async function sendCatalog(chatId: number) {
+async function sendCatalog(chatId: number, messageId?: number) {
   const admin = createAdminSupabaseClient();
   const { data: products } = await admin
     .from("products")
@@ -57,37 +51,37 @@ async function sendCatalog(chatId: number) {
     .order("created_at", { ascending: false })
     .limit(12);
 
-  if (!products?.length) {
-    await sendTelegramMessage(chatId, "Saat ini belum ada produk aktif untuk auto order.", {
-      bot: "auto",
-      reply_markup: buildAutoOrderButtons()
-    });
-    return;
+  const text = !products?.length
+    ? "Saat ini belum ada produk aktif untuk auto order."
+    : [
+        `🛒 <b>Katalog Auto Order ${SITE.name}</b>`,
+        "",
+        `Pilih produk dari tombol di bawah. Untuk produk panel, server dibuat otomatis dan tampil auto ready.`,
+        "",
+        ...products.map((p) => {
+          const isPanel = (p.service_type || "credential") === "pterodactyl";
+          return `• <b>${p.name}</b> — ${formatRupiah(p.price)} • ${
+            isPanel ? "auto ready" : `stok ${p.stock}`
+          } • terjual ${p.sold_count || 0}`;
+        })
+      ].join("\n");
+
+  const keyboard = !products?.length
+    ? buildAutoOrderButtons()
+    : {
+        inline_keyboard: [
+          ...products.map((p) => [
+            { text: `${p.name} (${formatRupiah(p.price)})`, callback_data: `product:${p.id}` }
+          ]),
+          [{ text: "⬅️ Menu utama", callback_data: "home:menu" }]
+        ]
+      };
+
+  if (messageId) {
+    return editTelegramMessage(chatId, messageId, text, { bot: "auto", reply_markup: keyboard });
   }
 
-  await sendTelegramMessage(
-    chatId,
-    [
-      `🛒 <b>Katalog Auto Order ${SITE.name}</b>`,
-      "",
-      "Pilih produk dari tombol di bawah. Sistem akan membuat order yang tersambung ke akun Anda berdasarkan Telegram ID yang tersimpan di profile web.",
-      "",
-      ...products.map((p) => {
-        const isPanel = (p.service_type || "credential") === "pterodactyl";
-        return `• <b>${p.name}</b> — ${formatRupiah(p.price)} • ${
-          isPanel ? "auto ready" : `stok ${p.stock}`
-        } • terjual ${p.sold_count || 0}`;
-      })
-    ].join("\n"),
-    {
-      bot: "auto",
-      reply_markup: {
-        inline_keyboard: products.map((p) => [
-          { text: `${p.name} (${formatRupiah(p.price)})`, callback_data: `product:${p.id}` }
-        ])
-      }
-    }
-  );
+  return sendTelegramMessage(chatId, text, { bot: "auto", reply_markup: keyboard });
 }
 
 async function ensureLinkedProfile(chatId: number) {
@@ -98,6 +92,94 @@ async function ensureLinkedProfile(chatId: number) {
     );
   }
   return profile;
+}
+
+function isTelegramAdmin(chatId: number) {
+  const raw = String(process.env.TELEGRAM_ADMIN_CHAT_IDS || "");
+  return raw
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .includes(String(chatId));
+}
+
+async function showHome(chatId: number, messageId?: number) {
+  const text = [
+    `🤖 <b>@${SITE.autoOrderBotUsername}</b> siap membantu auto order.`,
+    "",
+    `Bot ini bisa dipakai untuk:`,
+    `• buat order produk secara otomatis`,
+    `• bayar pakai QRIS dinamis atau saldo yang tersimpan di web`,
+    `• top up saldo langsung dari Telegram`,
+    `• lihat ringkasan saldo akun yang terhubung`,
+    "",
+    `Sebelum memakai auto order, pastikan Telegram ID Anda sudah diisi di halaman profile web agar order tidak tertukar akun.`
+  ].join("\n");
+
+  if (messageId) {
+    return editTelegramMessage(chatId, messageId, text, {
+      bot: "auto",
+      reply_markup: buildAutoOrderButtons()
+    });
+  }
+  return sendTelegramMessage(chatId, text, { bot: "auto", reply_markup: buildAutoOrderButtons() });
+}
+
+async function showWalletInfo(chatId: number, messageId?: number) {
+  const profile = await ensureLinkedProfile(chatId);
+  const text = [
+    `👛 <b>Saldo akun Anda</b>`,
+    "",
+    `<b>Nama</b>: ${profile.full_name || "User Kograph"}`,
+    `<b>Telegram ID</b>: <code>${profile.telegram_id || chatId}</code>`,
+    `<b>Saldo</b>: ${formatRupiah(profile.balance || 0)}`
+  ].join("\n");
+
+  if (messageId) {
+    return editTelegramMessage(chatId, messageId, text, {
+      bot: "auto",
+      reply_markup: topupMenuKeyboard()
+    });
+  }
+  return sendTelegramMessage(chatId, text, { bot: "auto", reply_markup: topupMenuKeyboard() });
+}
+
+async function showPaymentResult(chatId: number, sourceMessageId: number, result: any, isTopup = false) {
+  await deleteTelegramMessage(chatId, sourceMessageId, "auto").catch(() => null);
+
+  const lines = isTopup
+    ? [
+        `💰 <b>Top up saldo dibuat</b>`,
+        "",
+        `<b>Order ID</b>: <code>${result.orderId}</code>`,
+        `<b>Nominal</b>: ${formatRupiah(result.amount)}`,
+        `<b>Pembayaran</b>: QRIS dinamis`
+      ]
+    : [
+        `🧾 <b>Order berhasil dibuat</b>`,
+        "",
+        `<b>Order ID</b>: <code>${result.orderId}</code>`,
+        `<b>Total</b>: ${formatRupiah(result.finalAmount)}`,
+        `<b>Token cek</b>: <code>${result.statusToken}</code>`,
+        result.paymentUrl
+          ? `<b>Pembayaran</b>: QRIS dinamis`
+          : `<b>Pembayaran</b>: Dipotong dari saldo web Anda`,
+        "",
+        `Setelah bayar, Anda bisa cek status di @${SITE.botUsername}.`
+      ];
+
+  if (result.paymentQrUrl) {
+    return sendTelegramPhoto(chatId, result.paymentQrUrl, lines.join("\n"), {
+      bot: "auto",
+      reply_markup: buildCheckBotButtons()
+    });
+  }
+
+  return sendTelegramMessage(chatId, lines.join("\n"), {
+    bot: "auto",
+    reply_markup: buildCheckBotButtons(),
+    disable_web_page_preview: false
+  });
 }
 
 export async function POST(request: Request) {
@@ -126,26 +208,17 @@ export async function POST(request: Request) {
       });
 
       if (text.startsWith("/start")) {
-        await sendTelegramMessage(
-          chatId,
-          [
-            `🤖 <b>@${SITE.autoOrderBotUsername}</b> siap membantu auto order.`,
-            "",
-            "Bot ini bisa dipakai untuk:",
-            "• buat order produk secara otomatis",
-            "• bayar pakai Midtrans atau saldo yang tersimpan di web",
-            "• top up saldo langsung dari Telegram",
-            "• lihat ringkasan saldo akun yang terhubung",
-            "",
-            "Sebelum memakai auto order, pastikan Telegram ID Anda sudah diisi di halaman profile web agar order tidak tertukar akun."
-          ].join("\n"),
-          { bot: "auto", reply_markup: buildAutoOrderButtons() }
-        );
+        await showHome(chatId);
         return NextResponse.json({ ok: true });
       }
 
       if (text.startsWith("/buy")) {
         await sendCatalog(chatId);
+        return NextResponse.json({ ok: true });
+      }
+
+      if (text.startsWith("/saldo")) {
+        await showWalletInfo(chatId);
         return NextResponse.json({ ok: true });
       }
 
@@ -161,37 +234,12 @@ export async function POST(request: Request) {
         }
 
         const profile = await ensureLinkedProfile(chatId);
-        const topup = await createTelegramTopup({ userId: profile.id, amount });
-
-        await sendTelegramMessage(
-          chatId,
-          [
-            `💰 <b>Top up saldo dibuat</b>`,
-            "",
-            `<b>Order ID</b>: <code>${topup.orderId}</code>`,
-            `<b>Nominal</b>: ${formatRupiah(topup.amount)}`,
-            `<b>Link bayar</b>: ${topup.paymentUrl}`,
-            "",
-            "Setelah pembayaran terverifikasi, saldo akan otomatis masuk ke akun Anda."
-          ].join("\n"),
-          { bot: "auto", reply_markup: buildCheckBotButtons(), disable_web_page_preview: false }
-        );
-        return NextResponse.json({ ok: true });
-      }
-
-      if (text.startsWith("/saldo")) {
-        const profile = await ensureLinkedProfile(chatId);
-        await sendTelegramMessage(
-          chatId,
-          [
-            `👛 <b>Saldo akun Anda</b>`,
-            "",
-            `<b>Nama</b>: ${profile.full_name || "User Kograph"}`,
-            `<b>Telegram ID</b>: <code>${profile.telegram_id || chatId}</code>`,
-            `<b>Saldo</b>: ${formatRupiah(profile.balance || 0)}`
-          ].join("\n"),
-          { bot: "auto", reply_markup: topupMenuKeyboard() }
-        );
+        const topup = await createTelegramTopup({
+          userId: profile.id,
+          amount,
+          telegramId: String(chatId)
+        });
+        await showPaymentResult(chatId, message.message_id, topup, true);
         return NextResponse.json({ ok: true });
       }
 
@@ -226,26 +274,33 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true });
       }
 
-      await sendTelegramMessage(
-        chatId,
-        "Gunakan /buy untuk auto order, /topup untuk isi saldo, atau /saldo untuk cek saldo akun Anda.",
-        { bot: "auto", reply_markup: buildAutoOrderButtons() }
-      );
+      await showHome(chatId);
       return NextResponse.json({ ok: true });
     }
 
     if (callback?.id && callback?.message?.chat?.id) {
       const chatId = Number(callback.message.chat.id);
       const data = String(callback.data || "");
+      const messageId = Number(callback.message.message_id);
       await answerTelegramCallbackQuery(callback.id, "Diproses...", "auto");
 
+      if (data === "home:menu") {
+        await showHome(chatId, messageId);
+        return NextResponse.json({ ok: true });
+      }
+
       if (data === "catalog:list") {
-        await sendCatalog(chatId);
+        await sendCatalog(chatId, messageId);
+        return NextResponse.json({ ok: true });
+      }
+
+      if (data === "wallet:info") {
+        await showWalletInfo(chatId, messageId);
         return NextResponse.json({ ok: true });
       }
 
       if (data === "topup:menu") {
-        await sendTelegramMessage(chatId, "Pilih nominal top up saldo yang ingin Anda buat.", {
+        await editTelegramMessage(chatId, messageId, "Pilih nominal top up saldo yang ingin Anda buat.", {
           bot: "auto",
           reply_markup: topupMenuKeyboard()
         });
@@ -253,28 +308,19 @@ export async function POST(request: Request) {
       }
 
       if (data.startsWith("topup:")) {
+        const amount = Number(data.split(":")[1] || 0);
         const topup = await createTelegramTopup({
           userId: (await ensureLinkedProfile(chatId)).id,
-          amount: Number(data.split(":")[1] || 0)
+          amount,
+          telegramId: String(chatId)
         });
-
-        await sendTelegramMessage(
-          chatId,
-          [
-            `💰 <b>Top up saldo dibuat</b>`,
-            "",
-            `<b>Order ID</b>: <code>${topup.orderId}</code>`,
-            `<b>Nominal</b>: ${formatRupiah(topup.amount)}`,
-            `<b>Bayar di sini</b>: ${topup.paymentUrl}`
-          ].join("\n"),
-          { bot: "auto", disable_web_page_preview: false, reply_markup: buildCheckBotButtons() }
-        );
+        await showPaymentResult(chatId, messageId, topup, true);
         return NextResponse.json({ ok: true });
       }
 
       if (data.startsWith("product:")) {
         const productId = data.split(":")[1] || "";
-        await sendTelegramMessage(chatId, "Pilih metode pembayaran untuk produk ini.", {
+        await editTelegramMessage(chatId, messageId, "Pilih metode pembayaran untuk produk ini.", {
           bot: "auto",
           reply_markup: paymentChoiceKeyboard(productId)
         });
@@ -292,22 +338,7 @@ export async function POST(request: Request) {
           paymentMethod
         });
 
-        await sendTelegramMessage(
-          chatId,
-          [
-            `🧾 <b>Order berhasil dibuat</b>`,
-            "",
-            `<b>Order ID</b>: <code>${result.orderId}</code>`,
-            `<b>Total</b>: ${formatRupiah(result.finalAmount)}`,
-            `<b>Token cek</b>: <code>${result.statusToken}</code>`,
-            result.paymentUrl
-              ? `<b>Link bayar</b>: ${result.paymentUrl}`
-              : `<b>Pembayaran</b>: Dipotong dari saldo web Anda`,
-            "",
-            `Setelah bayar, Anda bisa cek status di @${SITE.botUsername}.`
-          ].join("\n"),
-          { bot: "auto", disable_web_page_preview: false, reply_markup: buildCheckBotButtons() }
-        );
+        await showPaymentResult(chatId, messageId, result, false);
         return NextResponse.json({ ok: true });
       }
     }

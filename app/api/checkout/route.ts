@@ -4,6 +4,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { midtransSnap } from "@/lib/midtrans";
 import { fulfillProductOrder } from "@/lib/fulfillment";
+import { preparePterodactylServerConfig } from "@/lib/pterodactyl";
 
 function calculateDiscount(input: {
   type: "fixed" | "percentage";
@@ -41,7 +42,7 @@ export async function POST(request: Request) {
 
     const { data: product } = await admin
       .from("products")
-      .select("id, name, price, stock, service_type, is_active")
+      .select("id, name, price, stock, service_type, is_active, pterodactyl_config")
       .eq("id", productId)
       .single();
 
@@ -68,17 +69,29 @@ export async function POST(request: Request) {
     }
 
     if (isPanel && !panelUsername) {
-      return NextResponse.json(
-        { error: "Username panel wajib diisi untuk pembelian panel" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Username panel wajib diisi untuk pembelian panel" }, { status: 400 });
     }
 
-    const { data: profile } = await admin
-      .from("profiles")
-      .select("full_name, balance, telegram_id")
-      .eq("id", user.id)
-      .single();
+    if (isPanel) {
+      const panelConfig = (product as any).pterodactyl_config || {};
+      await preparePterodactylServerConfig({
+        nest_id: Number(panelConfig.nest_id || process.env.PTERODACTYL_DEFAULT_NEST_ID || 1),
+        egg_id: Number(panelConfig.egg_id || process.env.PTERODACTYL_DEFAULT_EGG_ID || 1),
+        allocation_id: Number(panelConfig.allocation_id || process.env.PTERODACTYL_DEFAULT_ALLOCATION_ID || 1),
+        location_id: Number(panelConfig.location_id || process.env.PTERODACTYL_DEFAULT_LOCATION_ID || 1),
+        memory: Number(panelConfig.memory || 1024),
+        disk: Number(panelConfig.disk || 10240),
+        cpu: Number(panelConfig.cpu || 100),
+        databases: Number(panelConfig.databases || 1),
+        backups: Number(panelConfig.backups || 1),
+        allocations: Number(panelConfig.allocations || 1),
+        startup: panelConfig.startup || undefined,
+        docker_image: panelConfig.docker_image || process.env.PTERODACTYL_DEFAULT_DOCKER_IMAGE || undefined,
+        environment: panelConfig.environment || {}
+      });
+    }
+
+    const { data: profile } = await admin.from("profiles").select("full_name, balance, telegram_id").eq("id", user.id).single();
 
     const amount = Number((product as { price: number }).price);
     let discountAmount = 0;
@@ -99,17 +112,11 @@ export async function POST(request: Request) {
       const quotaAvailable = coupon?.quota == null || (coupon.used_count || 0) < coupon.quota;
 
       if (!coupon || !coupon.is_active || !isStarted || !isNotExpired || !quotaAvailable) {
-        return NextResponse.json(
-          { error: "Kupon tidak aktif atau sudah tidak berlaku" },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: "Kupon tidak aktif atau sudah tidak berlaku" }, { status: 400 });
       }
 
       if (amount < Number(coupon.min_purchase ?? 0)) {
-        return NextResponse.json(
-          { error: "Minimal belanja untuk kupon belum terpenuhi" },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: "Minimal belanja untuk kupon belum terpenuhi" }, { status: 400 });
       }
 
       discountAmount = calculateDiscount({
@@ -179,6 +186,7 @@ export async function POST(request: Request) {
         order_id: orderId,
         gross_amount: finalAmount
       },
+      enabled_payments: ["qris", "gopay", "shopeepay", "bca_va", "bni_va", "permata_va"],
       item_details: [
         {
           id: (product as { id: string }).id,
@@ -188,10 +196,7 @@ export async function POST(request: Request) {
         }
       ],
       customer_details: {
-        first_name:
-          (profile as { full_name?: string | null } | null)?.full_name ||
-          user.email?.split("@")[0] ||
-          "Customer",
+        first_name: (profile as { full_name?: string | null } | null)?.full_name || user.email?.split("@")[0] || "Customer",
         email: user.email || undefined
       }
     };

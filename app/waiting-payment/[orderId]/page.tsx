@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { WaitingPaymentClient } from "@/components/payment/waiting-payment-client";
+import { syncMidtransOrderState } from "@/lib/payment-reconcile";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,7 @@ export default async function WaitingPaymentPage({ params }: { params: { orderId
   const user = await requireUser();
   const supabase = createServerSupabaseClient();
 
-  const { data: transaction } = await supabase
+  let { data: transaction } = await supabase
     .from("transactions")
     .select(`
       id,
@@ -30,6 +31,32 @@ export default async function WaitingPaymentPage({ params }: { params: { orderId
     .single();
 
   if (!transaction) notFound();
+
+  if (transaction.status === "pending" && transaction.payment_method !== "balance") {
+    await syncMidtransOrderState(params.orderId).catch(() => null);
+
+    const refetch = await supabase
+      .from("transactions")
+      .select(`
+        id,
+        order_id,
+        amount,
+        discount_amount,
+        final_amount,
+        status,
+        snap_token,
+        created_at,
+        status_token,
+        payment_method,
+        fulfillment_data,
+        products ( name, service_type )
+      `)
+      .eq("order_id", params.orderId)
+      .eq("user_id", user.id)
+      .single();
+
+    transaction = refetch.data ?? transaction;
+  }
 
   const { data: credential } = await supabase
     .from("app_credentials")

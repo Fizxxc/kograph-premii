@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-import { midtransSnap } from "@/lib/midtrans";
+import { createMidtransQrisTransaction } from "@/lib/midtrans";
 import { fulfillProductOrder } from "@/lib/fulfillment";
 
 function calculateDiscount(input: {
@@ -9,7 +9,10 @@ function calculateDiscount(input: {
   baseAmount: number;
   maxDiscount: number | null;
 }) {
-  let discount = input.type === "fixed" ? input.value : Math.floor((input.baseAmount * input.value) / 100);
+  let discount =
+    input.type === "fixed"
+      ? input.value
+      : Math.floor((input.baseAmount * input.value) / 100);
   if (input.maxDiscount && discount > input.maxDiscount) discount = input.maxDiscount;
   return Math.max(0, Math.min(discount, input.baseAmount));
 }
@@ -66,14 +69,17 @@ export async function createTelegramProductOrder(input: {
     const code = input.couponCode.trim().toUpperCase();
     const { data: coupon } = await admin
       .from("coupons")
-      .select("code, type, value, min_purchase, max_discount, quota, used_count, is_active, starts_at, ends_at")
+      .select(
+        "code, type, value, min_purchase, max_discount, quota, used_count, is_active, starts_at, ends_at"
+      )
       .eq("code", code)
       .maybeSingle();
 
     const now = new Date();
     const isStarted = !coupon?.starts_at || new Date(coupon.starts_at) <= now;
     const isNotExpired = !coupon?.ends_at || new Date(coupon.ends_at) >= now;
-    const quotaAvailable = coupon?.quota == null || Number(coupon.used_count || 0) < Number(coupon.quota);
+    const quotaAvailable =
+      coupon?.quota == null || Number(coupon.used_count || 0) < Number(coupon.quota);
 
     if (!coupon || !coupon.is_active || !isStarted || !isNotExpired || !quotaAvailable) {
       throw new Error("Kupon tidak aktif atau sudah berakhir.");
@@ -92,7 +98,7 @@ export async function createTelegramProductOrder(input: {
   }
 
   const finalAmount = Math.max(0, amount - discountAmount);
-  const orderId = `KGT-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+  const orderId = `KGP-TG-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
   const statusToken = crypto.randomBytes(8).toString("hex").toUpperCase();
   const paymentMethod = input.paymentMethod || "midtrans";
 
@@ -106,7 +112,7 @@ export async function createTelegramProductOrder(input: {
     coupon_code: appliedCouponCode,
     status: "pending",
     status_token: statusToken,
-    payment_method: paymentMethod,
+    payment_method: paymentMethod === "balance" ? "balance" : "qris",
     telegram_id: input.telegramId,
     fulfillment_data: isPanel
       ? {
@@ -138,59 +144,82 @@ export async function createTelegramProductOrder(input: {
     if (walletError) throw new Error(walletError.message);
 
     await fulfillProductOrder(orderId);
-    return { orderId, paymentUrl: null, finalAmount, statusToken, paymentMethod, redirectPath: `/waiting-payment/${orderId}` };
+    return {
+      orderId,
+      paymentUrl: null,
+      paymentQrUrl: null,
+      finalAmount,
+      statusToken,
+      paymentMethod,
+      redirectPath: `/waiting-payment/${orderId}`
+    };
   }
 
-  const snapResponse = await midtransSnap.createTransaction({
-    transaction_details: { order_id: orderId, gross_amount: finalAmount },
-    item_details: [{ id: product.id, price: finalAmount, quantity: 1, name: String(product.name).slice(0, 50) }],
-    customer_details: {
+  const qris = await createMidtransQrisTransaction({
+    orderId,
+    amount: finalAmount,
+    itemDetails: [
+      { id: product.id, price: finalAmount, quantity: 1, name: String(product.name).slice(0, 50) }
+    ],
+    customerDetails: {
       first_name: profile?.full_name || `user_${input.telegramId}`,
       email: `telegram-${input.userId}@local.kograph`
     }
-  } as never);
+  });
 
   const { error: insertError } = await admin.from("transactions").insert({
     ...basePayload,
-    snap_token: snapResponse.token
+    snap_token: qris.transactionId || qris.qrUrl || "QRIS_PENDING",
+    fulfillment_data: {
+      ...(basePayload.fulfillment_data || {}),
+      payment_type: "qris",
+      payment_qr_url: qris.qrUrl || null
+    }
   });
   if (insertError) throw new Error(insertError.message);
 
   return {
     orderId,
-    paymentUrl: snapResponse.redirect_url,
+    paymentUrl: qris.qrUrl,
+    paymentQrUrl: qris.qrUrl,
     finalAmount,
     statusToken,
-    paymentMethod,
+    paymentMethod: "qris",
     redirectPath: `/waiting-payment/${orderId}`
   };
 }
 
-export async function createTelegramTopup(input: { userId: string; amount: number }) {
+export async function createTelegramTopup(input: {
+  userId: string;
+  amount: number;
+  telegramId?: string | null;
+}) {
   const admin = createAdminSupabaseClient();
   if (!Number.isFinite(input.amount) || input.amount < 10000) throw new Error("Minimal top up Rp10.000.");
 
   const { data: profile } = await admin.from("profiles").select("full_name").eq("id", input.userId).single();
-  const orderId = `TTG-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
-  const snap = await midtransSnap.createTransaction({
-    transaction_details: { order_id: orderId, gross_amount: input.amount },
-    item_details: [{ id: orderId, price: input.amount, quantity: 1, name: "Top Up Saldo Telegram Kograph" }],
-    customer_details: {
+  const orderId = `KGP-TOPUP-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+
+  const qris = await createMidtransQrisTransaction({
+    orderId,
+    amount: input.amount,
+    itemDetails: [{ id: orderId, price: input.amount, quantity: 1, name: "Top Up Saldo Telegram Kograph" }],
+    customerDetails: {
       first_name: profile?.full_name || "Telegram User",
       email: `telegram-${input.userId}@local.kograph`
     }
-  } as never);
+  });
 
   const { error } = await admin.from("wallet_topups").insert({
     order_id: orderId,
     user_id: input.userId,
     amount: input.amount,
     status: "pending",
-    snap_token: snap.token
+    snap_token: qris.transactionId || qris.qrUrl || "QRIS_PENDING"
   });
   if (error) throw new Error(error.message);
 
-  return { orderId, amount: input.amount, paymentUrl: snap.redirect_url, snapToken: snap.token };
+  return { orderId, amount: input.amount, paymentUrl: qris.qrUrl, paymentQrUrl: qris.qrUrl };
 }
 
 export async function adjustWalletByTelegramAdmin(input: {

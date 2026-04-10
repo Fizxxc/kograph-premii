@@ -1,2 +1,44 @@
-import crypto from "node:crypto"; import { NextResponse } from "next/server"; import { createServerSupabaseClient } from "@/lib/supabase/server"; import { createAdminSupabaseClient } from "@/lib/supabase/admin"; import { midtransSnap } from "@/lib/midtrans";
-export async function POST(request: Request) { try { const supabase = createServerSupabaseClient(); const admin = createAdminSupabaseClient(); const { data: { user } } = await supabase.auth.getUser(); if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); const body = await request.json(); const amount = Number(body.amount ?? 0); if (!Number.isFinite(amount) || amount < 10000) return NextResponse.json({ error: "Minimal top up Rp10.000" }, { status: 400 }); const { data: profile } = await admin.from("profiles").select("full_name").eq("id", user.id).single(); const orderId = `TOPUP-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`; const snap = await midtransSnap.createTransaction({ transaction_details: { order_id: orderId, gross_amount: amount }, item_details: [{ id: orderId, price: amount, quantity: 1, name: "Top Up Saldo Kograph" }], customer_details: { first_name: (profile as any)?.full_name || user.email?.split("@")[0] || "Customer", email: user.email || undefined } } as any); const { error } = await admin.from("wallet_topups").insert({ order_id: orderId, user_id: user.id, amount, status: "pending", snap_token: snap.token }); if (error) return NextResponse.json({ error: error.message }, { status: 500 }); return NextResponse.json({ success: true, orderId, redirectUrl: snap.redirect_url, snapToken: snap.token }); } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Top up gagal" }, { status: 500 }); } }
+import crypto from "node:crypto";
+import { NextResponse } from "next/server";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { midtransSnap } from "@/lib/midtrans";
+
+export async function POST(request: Request) {
+  try {
+    const supabase = createServerSupabaseClient();
+    const admin = createAdminSupabaseClient();
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const body = await request.json();
+    const amount = Number(body.amount ?? 0);
+    if (!Number.isFinite(amount) || amount < 10000)
+      return NextResponse.json({ error: "Minimal top up Rp10.000" }, { status: 400 });
+
+    const { data: profile } = await admin.from("profiles").select("full_name").eq("id", user.id).single();
+    const orderId = `KGP-TOPUP-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+    const snap = await midtransSnap.createTransaction({
+      transaction_details: { order_id: orderId, gross_amount: amount },
+      enabled_payments: ["qris", "gopay", "shopeepay", "bca_va", "bni_va", "permata_va"],
+      item_details: [{ id: orderId, price: amount, quantity: 1, name: "Top Up Saldo Kograph" }],
+      customer_details: {
+        first_name: (profile as any)?.full_name || user.email?.split("@")[0] || "Customer",
+        email: user.email || undefined
+      }
+    } as any);
+    const { error } = await admin.from("wallet_topups").insert({
+      order_id: orderId,
+      user_id: user.id,
+      amount,
+      status: "pending",
+      snap_token: snap.token
+    });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ success: true, orderId, redirectUrl: snap.redirect_url, snapToken: snap.token });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Top up gagal" }, { status: 500 });
+  }
+}

@@ -48,7 +48,7 @@ export function CheckoutCard({
   const [panelUsername, setPanelUsername] = useState("");
 
   const stockLabel = useMemo(() => {
-    if (isPanel) return "Auto Ready • dibuat otomatis setelah pembayaran berhasil";
+    if (isPanel) return "Auto Ready 24/7 • dibuat otomatis setelah pembayaran berhasil";
     if (stock <= 0) return "Stok habis";
     if (stock <= 5) return `Sisa ${stock} item`;
     return `Stok tersedia: ${stock}`;

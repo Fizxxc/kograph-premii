@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   CheckCircle2,
@@ -8,6 +8,7 @@ import {
   Download,
   Loader2,
   MessageCircleMore,
+  QrCode,
   ServerCog,
   Wallet
 } from "lucide-react";
@@ -29,6 +30,7 @@ type FulfillmentData = {
   panel_password?: string | null;
   server_uuid?: string | null;
   requested_username?: string | null;
+  payment_qr_url?: string | null;
 };
 
 type WaitingPaymentClientProps = {
@@ -50,10 +52,7 @@ type WaitingPaymentClientProps = {
   initialAccountData: string | null;
 };
 
-export function WaitingPaymentClient({
-  transaction,
-  initialAccountData
-}: WaitingPaymentClientProps) {
+export function WaitingPaymentClient({ transaction, initialAccountData }: WaitingPaymentClientProps) {
   const [status, setStatus] = useState(transaction.status);
   const [accountData, setAccountData] = useState(initialAccountData);
   const [fulfillmentData, setFulfillmentData] = useState<FulfillmentData | null>(
@@ -64,9 +63,14 @@ export function WaitingPaymentClient({
   const [showSuccess, setShowSuccess] = useState(Boolean(initialAccountData || transaction.fulfillment_data));
 
   const isPanel = transaction.service_type === "pterodactyl";
+  const isQrisOnly = transaction.payment_method === "qris";
+  const paymentQrUrl = useMemo(
+    () => fulfillmentData?.payment_qr_url || (isQrisOnly && transaction.snap_token?.startsWith("http") ? transaction.snap_token : null),
+    [fulfillmentData?.payment_qr_url, isQrisOnly, transaction.snap_token]
+  );
 
   useEffect(() => {
-    if (transaction.payment_method === "balance") {
+    if (transaction.payment_method === "balance" || isQrisOnly) {
       setIsScriptReady(false);
       return;
     }
@@ -89,7 +93,7 @@ export function WaitingPaymentClient({
     script.onload = () => setIsScriptReady(true);
     script.onerror = () => setIsScriptReady(false);
     document.body.appendChild(script);
-  }, [transaction.payment_method]);
+  }, [transaction.payment_method, isQrisOnly]);
 
   useEffect(() => {
     const supabase = createBrowserSupabaseClient();
@@ -221,6 +225,21 @@ export function WaitingPaymentClient({
             </div>
           </div>
 
+          {isQrisOnly && paymentQrUrl && status !== "settlement" && (
+            <div className="rounded-3xl border border-brand-500/30 bg-brand-500/10 p-5">
+              <div className="mb-3 flex items-center gap-2 text-brand-200">
+                <QrCode className="h-5 w-5" />
+                <span className="font-semibold">QRIS dinamis siap dibayar</span>
+              </div>
+              <div className="rounded-3xl bg-white p-4">
+                <img src={paymentQrUrl} alt="QRIS Dinamis" className="mx-auto aspect-square w-full max-w-sm object-contain" />
+              </div>
+              <div className="mt-4 text-sm text-slate-300">
+                Scan QRIS ini dari e-wallet atau mobile banking. Setelah settlement masuk dari Midtrans, status order akan berubah otomatis.
+              </div>
+            </div>
+          )}
+
           {!isPanel && status === "settlement" && accountData && (
             <div className="rounded-3xl border border-emerald-500/30 bg-emerald-500/10 p-5">
               <div className="mb-3 flex items-center gap-2 text-emerald-300">
@@ -228,9 +247,7 @@ export function WaitingPaymentClient({
                 <span className="font-semibold">Pembayaran berhasil</span>
               </div>
 
-              <div className="rounded-2xl bg-slate-950/80 p-4 font-mono text-sm text-white">
-                {accountData}
-              </div>
+              <div className="rounded-2xl bg-slate-950/80 p-4 font-mono text-sm text-white">{accountData}</div>
 
               <div className="mt-4 flex flex-wrap gap-3">
                 <Button variant="secondary" onClick={() => copyText(accountData, "Credential") }>
@@ -310,12 +327,14 @@ export function WaitingPaymentClient({
                 <div className="text-sm text-slate-300">
                   {transaction.payment_method === "balance"
                     ? "Order ini diproses dari saldo yang tersimpan di web"
-                    : "QRIS, e-wallet, virtual account | automatic payment"}
+                    : transaction.payment_method === "qris"
+                      ? "QRIS dinamis | realtime notification"
+                      : "QRIS, e-wallet, virtual account | automatic payment"}
                 </div>
               </div>
             </div>
 
-            {transaction.payment_method !== "balance" && (
+            {!isQrisOnly && transaction.payment_method !== "balance" && (
               <Button
                 className="w-full"
                 onClick={openSnap}
@@ -371,14 +390,12 @@ export function WaitingPaymentClient({
               <div>
                 <div className="text-lg font-bold text-white">Pembayaran Berhasil</div>
                 <div className="text-sm text-slate-300">
-                  {isPanel
-                    ? "Detail login panel Anda sudah siap."
-                    : "Credential Anda sudah aktif dan siap dipakai."}
+                  {isPanel ? "Detail login panel Anda sudah siap." : "Credential Anda sudah aktif dan siap dipakai."}
                 </div>
               </div>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 font-mono text-sm text-white whitespace-pre-wrap">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 font-mono text-sm whitespace-pre-wrap text-white">
               {isPanel ? panelInfoText : accountData}
             </div>
 

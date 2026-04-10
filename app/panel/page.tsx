@@ -2,6 +2,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { ProductCard } from "@/components/product-card";
 import { Card } from "@/components/ui/card";
 import { SITE } from "@/lib/constants";
+import { PANEL_RAM_PRESETS } from "@/lib/panel-packages";
 
 export const dynamic = "force-dynamic";
 
@@ -41,8 +42,27 @@ export default async function PanelPage() {
         <div>
           <div className="text-sm text-slate-400">Model stok panel</div>
           <div className="mt-2 text-sm leading-7 text-slate-300">
-            Produk panel ditampilkan sebagai auto ready karena server dibuat otomatis, bukan mengambil stok akun premium manual.
+            Produk panel ditampilkan sebagai auto ready 24/7 karena server dibuat otomatis, bukan mengambil stok akun premium manual.
           </div>
+        </div>
+      </Card>
+
+      <Card>
+        <div className="mb-4 text-lg font-semibold text-white">List RAM panel yang paling sering dijual</div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {PANEL_RAM_PRESETS.map((item) => (
+            <div key={item.key} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="text-lg font-bold text-white">{item.label}</div>
+              <div className="mt-1 text-sm text-slate-400">{item.tagline}</div>
+              <div className="mt-3 text-xs leading-6 text-slate-300">
+                {item.memoryMb == null ? "RAM fleksibel mengikuti limit paket." : `RAM ${item.memoryMb / 1024}GB`}
+                <br />
+                {item.diskMb == null ? "Disk menyesuaikan paket." : `Disk ${Math.round(item.diskMb / 1024)}GB`}
+                <br />
+                {item.cpuPercent == null ? "CPU fleksibel." : `CPU ${item.cpuPercent}%`}
+              </div>
+            </div>
+          ))}
         </div>
       </Card>
 

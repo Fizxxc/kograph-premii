@@ -1,6 +1,11 @@
 import crypto from "node:crypto";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-import { createPterodactylServer, createPterodactylUser } from "@/lib/pterodactyl";
+import {
+  createPterodactylServer,
+  createPterodactylUser,
+  preparePterodactylServerConfig
+} from "@/lib/pterodactyl";
+import { sendTelegramMessage } from "@/lib/telegram";
 
 function safeUsername(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12) || `user${Date.now().toString().slice(-6)}`;
@@ -13,6 +18,56 @@ function buildPanelCredentials(preferredUsername?: string | null) {
   const email = `${username}@${emailDomain}`;
   const password = `KgP!${crypto.randomBytes(6).toString("base64url")}`;
   return { username, email, password };
+}
+
+async function notifyTelegramProduct(tx: any, productName: string, fulfillmentData: any) {
+  if (!tx.telegram_id) return;
+
+  const lines = [
+    `✅ <b>Pembayaran berhasil terverifikasi</b>`,
+    "",
+    `<b>Order ID</b>: <code>${tx.order_id}</code>`,
+    `<b>Produk</b>: ${productName}`,
+    `<b>Status</b>: settlement`
+  ];
+
+  if (fulfillmentData?.type === "pterodactyl") {
+    lines.push(
+      "",
+      `<b>Panel URL</b>: ${fulfillmentData.panel_url || "-"}`,
+      `<b>Username</b>: <code>${fulfillmentData.panel_username || "-"}</code>`,
+      `<b>Email</b>: <code>${fulfillmentData.panel_email || "-"}</code>`,
+      `<b>Password</b>: <code>${fulfillmentData.panel_password || "-"}</code>`
+    );
+  }
+
+  await sendTelegramMessage(tx.telegram_id, lines.join("\n"), {
+    bot: "auto",
+    disable_web_page_preview: false
+  }).catch(() => null);
+}
+
+async function notifyTelegramTopup(userId: string, orderId: string, amount: number) {
+  const admin = createAdminSupabaseClient();
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("telegram_id, balance")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (!profile?.telegram_id) return;
+
+  await sendTelegramMessage(
+    profile.telegram_id,
+    [
+      `✅ <b>Top up berhasil masuk</b>`,
+      "",
+      `<b>Order ID</b>: <code>${orderId}</code>`,
+      `<b>Nominal</b>: Rp ${Intl.NumberFormat("id-ID").format(amount)}`,
+      `<b>Saldo sekarang</b>: Rp ${Intl.NumberFormat("id-ID").format(Number(profile.balance || 0))}`
+    ].join("\n"),
+    { bot: "auto" }
+  ).catch(() => null);
 }
 
 export async function fulfillProductOrder(orderId: string) {
@@ -47,6 +102,7 @@ export async function fulfillProductOrder(orderId: string) {
       .update({ sold_count: Number(product.sold_count || 0) + 1 })
       .eq("id", product.id);
 
+    await notifyTelegramProduct(tx, product.name, null);
     return data;
   }
 
@@ -62,9 +118,26 @@ export async function fulfillProductOrder(orderId: string) {
   const { data: userRow, error: userError } = await admin.auth.admin.getUserById((tx as any).user_id);
   if (userError) throw new Error(userError.message);
 
-  const fullName = String(
-    userRow.user?.user_metadata?.full_name || preferredUsername || "Customer Premium"
-  );
+  const fullName = String(userRow.user?.user_metadata?.full_name || preferredUsername || "Customer Premium");
+
+  const preparedConfig = await preparePterodactylServerConfig({
+    nest_id: Number(panelConfig.nest_id || process.env.PTERODACTYL_DEFAULT_NEST_ID || 1),
+    egg_id: Number(panelConfig.egg_id || process.env.PTERODACTYL_DEFAULT_EGG_ID || 1),
+    allocation_id: Number(
+      panelConfig.allocation_id || process.env.PTERODACTYL_DEFAULT_ALLOCATION_ID || 1
+    ),
+    location_id: Number(panelConfig.location_id || process.env.PTERODACTYL_DEFAULT_LOCATION_ID || 1),
+    memory: Number(panelConfig.memory || 1024),
+    disk: Number(panelConfig.disk || 10240),
+    cpu: Number(panelConfig.cpu || 100),
+    databases: Number(panelConfig.databases || 1),
+    backups: Number(panelConfig.backups || 1),
+    allocations: Number(panelConfig.allocations || 1),
+    startup: panelConfig.startup || undefined,
+    docker_image:
+      panelConfig.docker_image || process.env.PTERODACTYL_DEFAULT_DOCKER_IMAGE || undefined,
+    environment: panelConfig.environment || {}
+  });
 
   const panelUser = await createPterodactylUser({
     email: credentials.email,
@@ -78,26 +151,7 @@ export async function fulfillProductOrder(orderId: string) {
     name: `${product.name} - ${credentials.username}`,
     user_id: panelUser.id,
     external_id: orderId,
-    config: {
-      nest_id: Number(panelConfig.nest_id || process.env.PTERODACTYL_DEFAULT_NEST_ID || 1),
-      egg_id: Number(panelConfig.egg_id || process.env.PTERODACTYL_DEFAULT_EGG_ID || 1),
-      allocation_id: Number(
-        panelConfig.allocation_id || process.env.PTERODACTYL_DEFAULT_ALLOCATION_ID || 1
-      ),
-      location_id: Number(
-        panelConfig.location_id || process.env.PTERODACTYL_DEFAULT_LOCATION_ID || 1
-      ),
-      memory: Number(panelConfig.memory || 1024),
-      disk: Number(panelConfig.disk || 10240),
-      cpu: Number(panelConfig.cpu || 100),
-      databases: Number(panelConfig.databases || 1),
-      backups: Number(panelConfig.backups || 1),
-      allocations: Number(panelConfig.allocations || 1),
-      startup: panelConfig.startup || undefined,
-      docker_image:
-        panelConfig.docker_image || process.env.PTERODACTYL_DEFAULT_DOCKER_IMAGE || undefined,
-      environment: panelConfig.environment || {}
-    }
+    config: preparedConfig
   });
 
   const fulfillmentData = {
@@ -141,6 +195,8 @@ export async function fulfillProductOrder(orderId: string) {
     }
   }
 
+  await notifyTelegramProduct(tx, product.name, fulfillmentData);
+
   return { fulfilled: true, fulfillment_data: fulfillmentData };
 }
 
@@ -164,5 +220,6 @@ export async function settleWalletTopup(orderId: string) {
     p_admin_user_id: null
   });
 
+  await notifyTelegramTopup((topup as any).user_id, orderId, Number((topup as any).amount));
   return { settled: true };
 }

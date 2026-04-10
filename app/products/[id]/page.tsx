@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { formatDate, formatRupiah } from "@/lib/utils";
 import { SITE } from "@/lib/constants";
+import { PANEL_RAM_PRESETS } from "@/lib/panel-packages";
 
 export const dynamic = "force-dynamic";
 
@@ -47,12 +48,7 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
         .eq("status", "settlement")
         .limit(1)
         .maybeSingle(),
-      supabase
-        .from("reviews")
-        .select("id")
-        .eq("product_id", product.id)
-        .eq("user_id", user.id)
-        .maybeSingle(),
+      supabase.from("reviews").select("id").eq("product_id", product.id).eq("user_id", user.id).maybeSingle(),
       supabase.from("profiles").select("balance").eq("id", user.id).single()
     ]);
 
@@ -69,11 +65,7 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
       : null;
 
   const isPanel = (product.service_type || "credential") === "pterodactyl";
-  const stockBadgeText = isPanel
-    ? "Auto Ready"
-    : product.stock > 0
-      ? `Stock ${product.stock}`
-      : "Sold Out";
+  const stockBadgeText = isPanel ? "Auto Ready 24/7" : product.stock > 0 ? `Stock ${product.stock}` : "Sold Out";
 
   return (
     <div className="space-y-8">
@@ -87,9 +79,7 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
               <Badge className={isPanel || product.stock > 0 ? "text-emerald-300" : "text-rose-300"}>
                 {stockBadgeText}
               </Badge>
-              <Badge className="text-brand-200">
-                {isPanel ? "Panel Pterodactyl" : "Akun / Credential"}
-              </Badge>
+              <Badge className="text-brand-200">{isPanel ? "Panel Pterodactyl" : "Akun / Credential"}</Badge>
               <Badge className="text-slate-300">Terjual {product.sold_count || 0}</Badge>
               {product.featured && <Badge className="text-fuchsia-300">Featured</Badge>}
               {ratingAverage && (
@@ -107,6 +97,20 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
 
             <p className="leading-7 text-slate-300">{product.description}</p>
 
+            {isPanel && (
+              <div className="rounded-3xl border border-brand-500/20 bg-brand-500/10 p-5">
+                <div className="text-lg font-semibold text-white">Pilihan RAM panel populer</div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {PANEL_RAM_PRESETS.map((item) => (
+                    <div key={item.key} className="rounded-2xl border border-white/10 bg-slate-950/50 p-4 text-sm text-slate-300">
+                      <div className="font-semibold text-white">{item.label}</div>
+                      <div className="mt-1 text-xs text-slate-400">{item.tagline}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="grid gap-3 md:grid-cols-2">
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-300">
                 <div className="mb-2 flex items-center gap-2 font-semibold text-white">
@@ -118,11 +122,7 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
 
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-300">
                 <div className="mb-2 flex items-center gap-2 font-semibold text-white">
-                  {isPanel ? (
-                    <ServerCog className="h-4 w-4 text-brand-300" />
-                  ) : (
-                    <Bot className="h-4 w-4 text-brand-300" />
-                  )}
+                  {isPanel ? <ServerCog className="h-4 w-4 text-brand-300" /> : <Bot className="h-4 w-4 text-brand-300" />}
                   Auto order support
                 </div>
                 Cek order di @{SITE.botUsername} dan auto order di @{SITE.autoOrderBotUsername}. Admin siap bantu lewat @{SITE.support.telegram}.
@@ -154,14 +154,7 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
 
                     <div className="mt-2 flex gap-1">
                       {Array.from({ length: 5 }).map((_, index) => (
-                        <Star
-                          key={index}
-                          className={`h-4 w-4 ${
-                            index < Number(review.rating)
-                              ? "fill-yellow-400 text-yellow-400"
-                              : "text-slate-600"
-                          }`}
-                        />
+                        <Star key={index} className={`h-4 w-4 ${index < Number(review.rating) ? "fill-yellow-400 text-yellow-400" : "text-slate-600"}`} />
                       ))}
                     </div>
 
@@ -171,9 +164,7 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
               })}
             </div>
           ) : (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-5 text-slate-300">
-              Belum ada ulasan untuk produk ini.
-            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-5 text-slate-300">Belum ada ulasan untuk produk ini.</div>
           )}
         </Card>
 

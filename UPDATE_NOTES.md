@@ -1,21 +1,26 @@
-# Update Notes - Final Detail Refresh
+# Update Notes
 
-Perubahan tambahan di batch ini:
+Perubahan batch ini:
 
-- username bot auto order diubah menjadi `@kographautoBot`
-- navbar mobile dirapikan agar tidak terlalu mepet dan memakai scroll pills
-- web checkout panel sekarang meminta **username panel saja**
-- sistem generate otomatis **username login, email login, dan password login panel**
-- produk panel ditampilkan sebagai **Auto Ready** dan tidak lagi bergantung ke stok akun premium biasa
-- checkout panel bisa dibayar dengan **saldo web** atau Midtrans
-- bot auto order sekarang punya pilihan bayar via **Midtrans** atau **saldo web**
-- webhook Telegram tetap dua endpoint:
-  - `/api/telegram/webhook` untuk bot cek order
-  - `/api/telegram/auto-order-webhook` untuk bot auto order
-- detail login panel tampil lebih lengkap di waiting payment dan orders
-- fallback `docker_image` ditambahkan agar error `The docker image field is required.` lebih aman ditangani
-- `.env.example` ditambah `PTERODACTYL_LOGIN_DOMAIN` dan `PTERODACTYL_DEFAULT_DOCKER_IMAGE`
+- perbaikan checkout panel agar startup, docker image, dan environment egg bisa diambil otomatis dari konfigurasi egg Pterodactyl
+- panel web cukup isi username, lalu login panel digenerate otomatis setelah payment sukses
+- panel ditampilkan sebagai **Auto Ready 24/7**
+- tambahan halaman panel dengan list RAM populer dari 1GB sampai unlimited
+- navbar mobile dirapikan jadi grid supaya tidak mepet
+- bot Telegram dibagi dua:
+  - `/api/telegram/webhook` untuk cek order
+  - `/api/telegram/auto-order-webhook` untuk auto order, topup, dan admin saldo
+- bot auto order memakai QRIS dinamis untuk pembayaran Telegram
+- order code Telegram dan topup kini memakai prefix `KGP-`
+- sinkronisasi status Midtrans ditambah agar status pending bisa dicocokkan ulang dari API status Midtrans
+- callback button Telegram sekarang mengganti / menghapus pesan sebelumnya agar chat lebih rapi
+- saldo web tetap bisa dipakai untuk pembelian dari web maupun Telegram
+- `.env.local` dari user sudah dibawa masuk, lalu hanya ditambah variabel baru yang dibutuhkan
 
-Catatan:
-- Untuk provisioning panel yang benar-benar jalan, pastikan config produk panel mengandung resource Pterodactyl yang valid.
-- Jika egg panel Anda butuh environment tertentu, isi di `pterodactyl_config.environment`.
+Checklist deploy:
+
+1. Jalankan SQL migration yang relevan di folder `supabase/`
+2. Pastikan Notification URL Midtrans mengarah ke `/api/webhook`
+3. Set webhook Telegram check bot ke `/api/telegram/webhook`
+4. Set webhook Telegram auto order bot ke `/api/telegram/auto-order-webhook`
+5. Pastikan env Pterodactyl, Midtrans, dan Supabase terisi di server deploy

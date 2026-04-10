@@ -22,7 +22,7 @@ type Product = {
 export function ProductCard({ product }: { product: Product }) {
   const isPanel = (product.service_type || "credential") === "pterodactyl";
   const stockText = isPanel
-    ? "Auto Ready"
+    ? "Auto Ready 24/7"
     : product.stock > 0
       ? `Stock ${product.stock}`
       : "Sold Out";
