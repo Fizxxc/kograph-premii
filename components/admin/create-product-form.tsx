@@ -19,7 +19,8 @@ const panelConfigExample = `{
   "cpu": 150,
   "databases": 1,
   "backups": 1,
-  "allocations": 1
+  "allocations": 1,
+  "docker_image": "ghcr.io/pterodactyl/yolks:nodejs_18"
 }`;
 
 export function CreateProductForm() {
@@ -60,8 +61,7 @@ export function CreateProductForm() {
         ref={formRef}
         onSubmit={async (e) => {
           e.preventDefault();
-          const form = e.currentTarget;
-          await submit(new FormData(form));
+          await submit(new FormData(e.currentTarget));
         }}
         className="space-y-4"
       >
@@ -75,10 +75,21 @@ export function CreateProductForm() {
             onChange={(e) => setServiceType(e.target.value as "credential" | "pterodactyl")}
             className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none"
           >
-            <option value="credential" className="bg-slate-900">Akun / Credential</option>
-            <option value="pterodactyl" className="bg-slate-900">Panel Pterodactyl</option>
+            <option value="credential" className="bg-slate-900">
+              Akun / Credential
+            </option>
+            <option value="pterodactyl" className="bg-slate-900">
+              Panel Pterodactyl
+            </option>
           </select>
           <Input name="sold_count" type="number" min="0" placeholder="Jumlah terjual awal" defaultValue={0} />
+          <Input
+            name="stock"
+            type="number"
+            min="0"
+            placeholder={serviceType === "pterodactyl" ? "Biarkan 0, panel auto ready" : "Stok awal"}
+            defaultValue={serviceType === "pterodactyl" ? 0 : 0}
+          />
         </div>
 
         <Textarea name="description" placeholder="Deskripsi produk" required />
@@ -109,17 +120,17 @@ export function CreateProductForm() {
               <div className="font-semibold">Konfigurasi Panel Pterodactyl</div>
             </div>
             <p className="text-sm leading-6 text-slate-300">
-              Isi JSON resource panel agar auto order bot dan webhook bisa membuat server secara otomatis setelah pembayaran settle.
+              Isi JSON resource panel agar webhook bisa membuat server secara otomatis setelah pembayaran settle. Field docker_image juga sebaiknya diisi agar tidak gagal saat provisioning.
             </p>
             <Textarea
               name="pterodactyl_config"
-              rows={11}
+              rows={12}
               defaultValue={panelConfigExample}
               placeholder={panelConfigExample}
             />
             <div className="flex items-start gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-slate-200">
               <ShieldCheck className="mt-0.5 h-4 w-4 text-emerald-300" />
-              Pastikan allocation, nest, egg, memory, disk, dan CPU sesuai panel Anda supaya provisioning tidak gagal.
+              Produk panel akan tampil sebagai auto ready di katalog. User hanya memasukkan username panel, lalu email login dan password login dibuat otomatis.
             </div>
           </div>
         )}

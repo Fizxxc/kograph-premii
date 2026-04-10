@@ -1,32 +1,21 @@
-# Kograph Premium Update Notes
+# Update Notes - Final Detail Refresh
 
-Source ini sudah diperbarui dengan fitur utama berikut:
+Perubahan tambahan di batch ini:
 
-- Menu khusus **Panel Pterodactyl** di web
-- **2 bot Telegram terpisah**
-  - Bot cek order
-  - Bot auto order + top up saldo + admin adjustment saldo Telegram
-- **Saldo/deposit per akun**
-- **Top up saldo** via web dan Telegram
-- **Admin security manager** untuk akses user, update data keamanan, dan adjustment saldo
-- **Sold count** di katalog, detail produk, panel page, dan admin
-- **Profile page**: nama, foto, nomor telepon, Telegram ID, password
-- **Footer legal**: privacy policy, terms, faq, report
-- **Report saldo hilang** via web
-- Fulfillment **Pterodactyl panel** setelah pembayaran settle
+- username bot auto order diubah menjadi `@kographautoBot`
+- navbar mobile dirapikan agar tidak terlalu mepet dan memakai scroll pills
+- web checkout panel sekarang meminta **username panel saja**
+- sistem generate otomatis **username login, email login, dan password login panel**
+- produk panel ditampilkan sebagai **Auto Ready** dan tidak lagi bergantung ke stok akun premium biasa
+- checkout panel bisa dibayar dengan **saldo web** atau Midtrans
+- bot auto order sekarang punya pilihan bayar via **Midtrans** atau **saldo web**
+- webhook Telegram tetap dua endpoint:
+  - `/api/telegram/webhook` untuk bot cek order
+  - `/api/telegram/auto-order-webhook` untuk bot auto order
+- detail login panel tampil lebih lengkap di waiting payment dan orders
+- fallback `docker_image` ditambahkan agar error `The docker image field is required.` lebih aman ditangani
+- `.env.example` ditambah `PTERODACTYL_LOGIN_DOMAIN` dan `PTERODACTYL_DEFAULT_DOCKER_IMAGE`
 
-## Langkah setelah extract
-
-1. Install dependency
-   - `npm ci`
-2. Jalankan migrasi database
-   - `supabase/schema-v3-wallet-panel.sql`
-3. Isi file env lokal berdasarkan `.env.example`
-4. Jalankan project
-   - `npm run dev`
-
-## Catatan penting
-
-- `.env.example` sengaja memakai placeholder agar aman untuk GitHub.
-- Jangan commit secret asli ke repository.
-- Isi token bot, key Midtrans, dan key Pterodactyl di `.env.local` atau env deployment Anda.
+Catatan:
+- Untuk provisioning panel yang benar-benar jalan, pastikan config produk panel mengandung resource Pterodactyl yang valid.
+- Jika egg panel Anda butuh environment tertentu, isi di `pterodactyl_config.environment`.

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { SITE } from "@/lib/constants";
 
 export function BroadcastPanel() {
   const [message, setMessage] = useState("");
@@ -45,9 +46,8 @@ export function BroadcastPanel() {
     try {
       const response = await fetch("/api/admin/telegram/set-webhook", { method: "POST" });
       const json = await response.json();
-
       if (!response.ok) throw new Error(json.error || "Gagal set webhook");
-      toast.success("Webhook Telegram berhasil dipasang.");
+      toast.success("Dua webhook Telegram berhasil dipasang.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Gagal set webhook");
     } finally {
@@ -79,10 +79,10 @@ export function BroadcastPanel() {
           <span className="font-semibold">Telegram Webhook</span>
         </div>
         <p className="text-sm leading-6 text-slate-300">
-          Tombol ini mendaftarkan endpoint webhook Next.js ke Telegram agar bot <span className="font-semibold text-white">@KographCheckBot</span> dapat merespons command secara realtime.
+          Tombol ini mendaftarkan endpoint webhook Next.js untuk dua bot sekaligus: bot cek order <span className="font-semibold text-white">@{SITE.botUsername}</span> dan bot auto order <span className="font-semibold text-white">@{SITE.autoOrderBotUsername}</span>.
         </p>
         <Button className="mt-4 w-full" variant="secondary" onClick={setWebhook} disabled={settingWebhook}>
-          {settingWebhook ? "Memasang webhook..." : "Set Telegram Webhook"}
+          {settingWebhook ? "Memasang webhook..." : "Set 2 Telegram Webhook"}
         </Button>
       </Card>
     </div>

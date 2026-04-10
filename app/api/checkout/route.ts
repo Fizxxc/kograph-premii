@@ -1,3 +1,220 @@
-import crypto from "node:crypto"; import { NextResponse } from "next/server"; import { createServerSupabaseClient } from "@/lib/supabase/server"; import { createAdminSupabaseClient } from "@/lib/supabase/admin"; import { midtransSnap } from "@/lib/midtrans"; import { fulfillProductOrder } from "@/lib/fulfillment";
-function calculateDiscount(input: { type: "fixed" | "percentage"; value: number; baseAmount: number; maxDiscount: number | null; }) { let discount = input.type === "fixed" ? input.value : Math.floor((input.baseAmount * input.value) / 100); if (input.maxDiscount && discount > input.maxDiscount) discount = input.maxDiscount; return Math.max(0, Math.min(discount, input.baseAmount)); }
-export async function POST(request: Request) { try { const supabase = createServerSupabaseClient(); const admin = createAdminSupabaseClient(); const { data: { user } } = await supabase.auth.getUser(); if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); const body = await request.json(); const productId = String(body.productId ?? "").trim(); const couponCode = String(body.couponCode ?? "").trim().toUpperCase(); const paymentMethod = String(body.paymentMethod ?? "midtrans").trim().toLowerCase(); const telegramId = String(body.telegramId ?? "").trim(); if (!productId) return NextResponse.json({ error: "productId wajib diisi" }, { status: 400 }); const { data: product } = await admin.from("products").select("id, name, price, stock, service_type").eq("id", productId).single(); if (!product) return NextResponse.json({ error: "Produk tidak ditemukan" }, { status: 404 }); if (Number((product as any).stock || 0) <= 0) return NextResponse.json({ error: "Stok produk sedang habis" }, { status: 400 }); if (((product as any).service_type || "credential") === "credential") { const { count: availableCredentialCount } = await admin.from("app_credentials").select("*", { count: "exact", head: true }).eq("product_id", productId).eq("is_used", false); if ((availableCredentialCount ?? 0) <= 0) return NextResponse.json({ error: "Credential tidak tersedia" }, { status: 400 }); } if (((product as any).service_type || "credential") === "pterodactyl" && !telegramId) return NextResponse.json({ error: "ID Telegram wajib diisi untuk pembelian panel" }, { status: 400 }); const { data: profile } = await admin.from("profiles").select("full_name, balance").eq("id", user.id).single(); const amount = Number((product as any).price); let discountAmount = 0; let appliedCouponCode: string | null = null; if (couponCode) { const { data: coupon } = await admin.from("coupons").select("id, code, type, value, min_purchase, max_discount, quota, used_count, is_active, starts_at, ends_at").eq("code", couponCode).single(); const now = new Date(); const isStarted = !coupon?.starts_at || new Date(coupon.starts_at) <= now; const isNotExpired = !coupon?.ends_at || new Date(coupon.ends_at) >= now; const quotaAvailable = coupon?.quota == null || (coupon.used_count || 0) < coupon.quota; if (!coupon || !coupon.is_active || !isStarted || !isNotExpired || !quotaAvailable) return NextResponse.json({ error: "Kupon tidak aktif atau sudah tidak berlaku" }, { status: 400 }); if (amount < Number(coupon.min_purchase ?? 0)) return NextResponse.json({ error: "Minimal belanja untuk kupon belum terpenuhi" }, { status: 400 }); discountAmount = calculateDiscount({ type: coupon.type as any, value: Number(coupon.value), baseAmount: amount, maxDiscount: coupon.max_discount ? Number(coupon.max_discount) : null }); appliedCouponCode = coupon.code; } const finalAmount = Math.max(0, amount - discountAmount); const orderId = `KGP-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`; const statusToken = crypto.randomBytes(8).toString("hex").toUpperCase(); if (paymentMethod === "balance") { const balance = Number((profile as any)?.balance || 0); if (balance < finalAmount) return NextResponse.json({ error: "Saldo Anda tidak mencukupi" }, { status: 400 }); const { error: insertError } = await admin.from("transactions").insert({ order_id: orderId, user_id: user.id, product_id: (product as any).id, amount, discount_amount: discountAmount, final_amount: finalAmount, coupon_code: appliedCouponCode, status: "pending", snap_token: "BALANCE_PAYMENT", status_token: statusToken, payment_method: "balance", telegram_id: telegramId || null }); if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 }); const { error: balanceError } = await admin.rpc("apply_wallet_adjustment", { p_user_id: user.id, p_amount: -finalAmount, p_type: "purchase", p_description: `Pembelian ${product.name} (${orderId}) via saldo`, p_admin_user_id: null }); if (balanceError) return NextResponse.json({ error: balanceError.message }, { status: 500 }); await fulfillProductOrder(orderId); return NextResponse.json({ success: true, orderId, redirectTo: `/waiting-payment/${orderId}` }); } const snapPayload = { transaction_details: { order_id: orderId, gross_amount: finalAmount }, item_details: [{ id: (product as any).id, price: finalAmount, quantity: 1, name: String((product as any).name).slice(0, 50) }], customer_details: { first_name: (profile as any)?.full_name || user.email?.split("@")[0] || "Customer", email: user.email || undefined } }; const snapResponse = await midtransSnap.createTransaction(snapPayload as any); const { error: insertError } = await admin.from("transactions").insert({ order_id: orderId, user_id: user.id, product_id: (product as any).id, amount, discount_amount: discountAmount, final_amount: finalAmount, coupon_code: appliedCouponCode, status: "pending", snap_token: snapResponse.token, status_token: statusToken, payment_method: "midtrans", telegram_id: telegramId || null }); if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 }); return NextResponse.json({ success: true, orderId, redirectUrl: `/waiting-payment/${orderId}` }); } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Checkout gagal" }, { status: 500 }); } }
+import crypto from "node:crypto";
+import { NextResponse } from "next/server";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { midtransSnap } from "@/lib/midtrans";
+import { fulfillProductOrder } from "@/lib/fulfillment";
+
+function calculateDiscount(input: {
+  type: "fixed" | "percentage";
+  value: number;
+  baseAmount: number;
+  maxDiscount: number | null;
+}) {
+  let discount = input.type === "fixed" ? input.value : Math.floor((input.baseAmount * input.value) / 100);
+
+  if (input.maxDiscount && discount > input.maxDiscount) discount = input.maxDiscount;
+
+  return Math.max(0, Math.min(discount, input.baseAmount));
+}
+
+export async function POST(request: Request) {
+  try {
+    const supabase = createServerSupabaseClient();
+    const admin = createAdminSupabaseClient();
+
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const body = await request.json();
+    const productId = String(body.productId ?? "").trim();
+    const couponCode = String(body.couponCode ?? "").trim().toUpperCase();
+    const paymentMethod = String(body.paymentMethod ?? "midtrans").trim().toLowerCase();
+    const panelUsername = String(body.panelUsername ?? "").trim();
+
+    if (!productId) {
+      return NextResponse.json({ error: "productId wajib diisi" }, { status: 400 });
+    }
+
+    const { data: product } = await admin
+      .from("products")
+      .select("id, name, price, stock, service_type, is_active")
+      .eq("id", productId)
+      .single();
+
+    if (!product || (product as { is_active?: boolean }).is_active === false) {
+      return NextResponse.json({ error: "Produk tidak ditemukan" }, { status: 404 });
+    }
+
+    const isPanel = ((product as { service_type?: string | null }).service_type || "credential") === "pterodactyl";
+
+    if (!isPanel && Number((product as { stock?: number }).stock || 0) <= 0) {
+      return NextResponse.json({ error: "Stok produk sedang habis" }, { status: 400 });
+    }
+
+    if (!isPanel) {
+      const { count: availableCredentialCount } = await admin
+        .from("app_credentials")
+        .select("*", { count: "exact", head: true })
+        .eq("product_id", productId)
+        .eq("is_used", false);
+
+      if ((availableCredentialCount ?? 0) <= 0) {
+        return NextResponse.json({ error: "Credential tidak tersedia" }, { status: 400 });
+      }
+    }
+
+    if (isPanel && !panelUsername) {
+      return NextResponse.json(
+        { error: "Username panel wajib diisi untuk pembelian panel" },
+        { status: 400 }
+      );
+    }
+
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("full_name, balance, telegram_id")
+      .eq("id", user.id)
+      .single();
+
+    const amount = Number((product as { price: number }).price);
+    let discountAmount = 0;
+    let appliedCouponCode: string | null = null;
+
+    if (couponCode) {
+      const { data: coupon } = await admin
+        .from("coupons")
+        .select(
+          "id, code, type, value, min_purchase, max_discount, quota, used_count, is_active, starts_at, ends_at"
+        )
+        .eq("code", couponCode)
+        .single();
+
+      const now = new Date();
+      const isStarted = !coupon?.starts_at || new Date(coupon.starts_at) <= now;
+      const isNotExpired = !coupon?.ends_at || new Date(coupon.ends_at) >= now;
+      const quotaAvailable = coupon?.quota == null || (coupon.used_count || 0) < coupon.quota;
+
+      if (!coupon || !coupon.is_active || !isStarted || !isNotExpired || !quotaAvailable) {
+        return NextResponse.json(
+          { error: "Kupon tidak aktif atau sudah tidak berlaku" },
+          { status: 400 }
+        );
+      }
+
+      if (amount < Number(coupon.min_purchase ?? 0)) {
+        return NextResponse.json(
+          { error: "Minimal belanja untuk kupon belum terpenuhi" },
+          { status: 400 }
+        );
+      }
+
+      discountAmount = calculateDiscount({
+        type: coupon.type as "fixed" | "percentage",
+        value: Number(coupon.value),
+        baseAmount: amount,
+        maxDiscount: coupon.max_discount ? Number(coupon.max_discount) : null
+      });
+
+      appliedCouponCode = coupon.code;
+    }
+
+    const finalAmount = Math.max(0, amount - discountAmount);
+    const orderId = `KGP-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+    const statusToken = crypto.randomBytes(8).toString("hex").toUpperCase();
+
+    const baseTransactionPayload = {
+      order_id: orderId,
+      user_id: user.id,
+      product_id: (product as { id: string }).id,
+      amount,
+      discount_amount: discountAmount,
+      final_amount: finalAmount,
+      coupon_code: appliedCouponCode,
+      status: "pending",
+      status_token: statusToken,
+      payment_method: paymentMethod,
+      telegram_id: (profile as { telegram_id?: string | null } | null)?.telegram_id || null,
+      fulfillment_data: isPanel
+        ? {
+            type: "pterodactyl_pending",
+            requested_username: panelUsername,
+            requested_from: "web"
+          }
+        : null
+    };
+
+    if (paymentMethod === "balance") {
+      const balance = Number((profile as { balance?: number | null } | null)?.balance || 0);
+      if (balance < finalAmount) {
+        return NextResponse.json({ error: "Saldo Anda tidak mencukupi" }, { status: 400 });
+      }
+
+      const { error: insertError } = await admin.from("transactions").insert({
+        ...baseTransactionPayload,
+        snap_token: "BALANCE_PAYMENT"
+      });
+
+      if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
+
+      const { error: balanceError } = await admin.rpc("apply_wallet_adjustment", {
+        p_user_id: user.id,
+        p_amount: -finalAmount,
+        p_type: "purchase",
+        p_description: `Pembelian ${(product as { name: string }).name} (${orderId}) via saldo`,
+        p_admin_user_id: null
+      });
+
+      if (balanceError) return NextResponse.json({ error: balanceError.message }, { status: 500 });
+
+      await fulfillProductOrder(orderId);
+      return NextResponse.json({ success: true, orderId, redirectTo: `/waiting-payment/${orderId}` });
+    }
+
+    const snapPayload = {
+      transaction_details: {
+        order_id: orderId,
+        gross_amount: finalAmount
+      },
+      item_details: [
+        {
+          id: (product as { id: string }).id,
+          price: finalAmount,
+          quantity: 1,
+          name: String((product as { name: string }).name).slice(0, 50)
+        }
+      ],
+      customer_details: {
+        first_name:
+          (profile as { full_name?: string | null } | null)?.full_name ||
+          user.email?.split("@")[0] ||
+          "Customer",
+        email: user.email || undefined
+      }
+    };
+
+    const snapResponse = await midtransSnap.createTransaction(snapPayload as never);
+
+    const { error: insertError } = await admin.from("transactions").insert({
+      ...baseTransactionPayload,
+      snap_token: snapResponse.token
+    });
+
+    if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
+
+    return NextResponse.json({
+      success: true,
+      orderId,
+      snapToken: snapResponse.token,
+      redirectUrl: `/waiting-payment/${orderId}`
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Checkout gagal" },
+      { status: 500 }
+    );
+  }
+}

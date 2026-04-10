@@ -1,5 +1,14 @@
 import Link from "next/link";
-import { Bot, Gem, LayoutDashboard, ServerCog, ShoppingBag, UserRound } from "lucide-react";
+import {
+  Bot,
+  Gem,
+  LayoutDashboard,
+  Menu,
+  ServerCog,
+  ShoppingBag,
+  UserRound,
+  Wallet
+} from "lucide-react";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { SITE } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
@@ -8,61 +17,172 @@ import { formatRupiah } from "@/lib/utils";
 
 export async function Header() {
   const supabase = createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
 
   let profile: { role?: string; full_name?: string; balance?: number | null } | null = null;
   if (user) {
-    const { data } = await supabase.from("profiles").select("role, full_name, balance").eq("id", user.id).single();
+    const { data } = await supabase
+      .from("profiles")
+      .select("role, full_name, balance")
+      .eq("id", user.id)
+      .single();
     profile = (data as { role?: string; full_name?: string; balance?: number | null } | null) ?? null;
   }
 
+  const desktopLinks = [
+    { href: "/", label: "Home" },
+    { href: "/panel", label: "Panel" },
+    { href: "/orders", label: "Orders" },
+    ...(user ? [{ href: "/profile", label: "Profile" }] : []),
+    { href: `https://t.me/${SITE.botUsername}`, label: "Bot Cek", external: true },
+    { href: `https://t.me/${SITE.autoOrderBotUsername}`, label: "Bot Auto", external: true },
+    ...(profile?.role === "admin" ? [{ href: "/admin", label: "Admin" }] : [])
+  ];
+
+  const mobileLinks = [
+    { href: "/", label: "Home", icon: ShoppingBag },
+    { href: "/panel", label: "Panel", icon: ServerCog },
+    { href: "/orders", label: "Orders", icon: ShoppingBag },
+    ...(user ? [{ href: "/profile", label: "Profile", icon: UserRound }] : []),
+    { href: `https://t.me/${SITE.botUsername}`, label: "Bot Cek", icon: Bot, external: true },
+    { href: `https://t.me/${SITE.autoOrderBotUsername}`, label: "Bot Auto", icon: Bot, external: true },
+    ...(profile?.role === "admin" ? [{ href: "/admin", label: "Admin", icon: LayoutDashboard }] : [])
+  ];
+
   return (
-    <header className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/35 backdrop-blur-2xl">
-      <div className="container-shell flex h-20 items-center justify-between gap-4">
-        <Link href="/" className="flex items-center gap-3">
-          <div className="rounded-2xl bg-brand-600/20 p-2 text-brand-300"><Gem className="h-5 w-5" /></div>
-          <div>
-            <div className="text-base font-bold tracking-wide text-white">{SITE.name}</div>
-            <div className="text-xs text-slate-400">Premium account, panel, dan saldo deposit</div>
-          </div>
-        </Link>
-
-        <nav className="hidden items-center gap-2 md:flex">
-          <Link href="/" className="rounded-full px-4 py-2 text-sm text-slate-200 hover:bg-white/5">Home</Link>
-          <Link href="/panel" className="rounded-full px-4 py-2 text-sm text-slate-200 hover:bg-white/5">Panel</Link>
-          <Link href="/orders" className="rounded-full px-4 py-2 text-sm text-slate-200 hover:bg-white/5">Orders</Link>
-          {user && <Link href="/profile" className="rounded-full px-4 py-2 text-sm text-slate-200 hover:bg-white/5">Profile</Link>}
-          <a href={`https://t.me/${SITE.botUsername}`} target="_blank" rel="noreferrer" className="rounded-full px-4 py-2 text-sm text-slate-200 hover:bg-white/5">Bot Cek</a>
-          <a href={`https://t.me/${SITE.autoOrderBotUsername}`} target="_blank" rel="noreferrer" className="rounded-full px-4 py-2 text-sm text-slate-200 hover:bg-white/5">Bot Auto Order</a>
-          {profile?.role === "admin" && <Link href="/admin" className="rounded-full px-4 py-2 text-sm text-slate-200 hover:bg-white/5">Admin</Link>}
-        </nav>
-
-        <div className="flex items-center gap-3">
-          {user ? (
-            <>
-              <div className="hidden text-right md:block">
-                <div className="text-sm font-semibold text-white">{profile?.full_name || user.email}</div>
-                <div className="text-xs text-slate-400">Saldo {formatRupiah(profile?.balance || 0)}</div>
+    <header className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/60 backdrop-blur-2xl">
+      <div className="container-shell py-3 md:py-4">
+        <div className="flex items-center justify-between gap-4">
+          <Link href="/" className="min-w-0 flex-1 md:flex-none">
+            <div className="flex items-center gap-3">
+              <div className="rounded-2xl bg-brand-600/20 p-2 text-brand-300">
+                <Gem className="h-5 w-5" />
               </div>
-              <LogoutButton />
-            </>
-          ) : (
-            <>
-              <Link href="/login"><Button variant="ghost">Login</Button></Link>
-              <Link href="/register"><Button>Register</Button></Link>
-            </>
-          )}
-        </div>
-      </div>
+              <div className="min-w-0">
+                <div className="truncate text-base font-bold tracking-wide text-white md:text-2xl">
+                  {SITE.name}
+                </div>
+                <div className="truncate text-xs text-slate-400 md:text-sm">
+                  Premium account, panel, dan saldo deposit
+                </div>
+              </div>
+            </div>
+          </Link>
 
-      <div className="container-shell pb-3 md:hidden">
-        <div className="glass flex items-center justify-between rounded-2xl px-3 py-2 text-sm text-slate-200">
-          <Link href="/" className="flex items-center gap-1"><ShoppingBag className="h-4 w-4" />Home</Link>
-          <Link href="/panel" className="flex items-center gap-1"><ServerCog className="h-4 w-4" />Panel</Link>
-          <Link href="/orders" className="flex items-center gap-1"><ShoppingBag className="h-4 w-4" />Orders</Link>
-          {user && <Link href="/profile" className="flex items-center gap-1"><UserRound className="h-4 w-4" />Profile</Link>}
-          <a href={`https://t.me/${SITE.autoOrderBotUsername}`} className="flex items-center gap-1"><Bot className="h-4 w-4" />Bot</a>
-          {profile?.role === "admin" && <Link href="/admin" className="flex items-center gap-1"><LayoutDashboard className="h-4 w-4" />Admin</Link>}
+          <nav className="hidden items-center gap-2 md:flex">
+            {desktopLinks.map((item) =>
+              item.external ? (
+                <a
+                  key={item.label}
+                  href={item.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-full px-4 py-2 text-sm text-slate-200 transition hover:bg-white/5"
+                >
+                  {item.label}
+                </a>
+              ) : (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  className="rounded-full px-4 py-2 text-sm text-slate-200 transition hover:bg-white/5"
+                >
+                  {item.label}
+                </Link>
+              )
+            )}
+          </nav>
+
+          <div className="hidden items-center gap-3 md:flex">
+            {user ? (
+              <>
+                <div className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-300">
+                  Saldo {formatRupiah(Number(profile?.balance || 0))}
+                </div>
+                <LogoutButton />
+              </>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Link href="/login">
+                  <Button variant="ghost">Login</Button>
+                </Link>
+                <Link href="/register">
+                  <Button>Register</Button>
+                </Link>
+              </div>
+            )}
+          </div>
+
+          <div className="flex md:hidden">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-2 text-slate-200">
+              <Menu className="h-5 w-5" />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 space-y-3 md:hidden">
+          {user && (
+            <div className="flex items-center justify-between rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm">
+              <div>
+                <div className="text-xs uppercase tracking-[0.2em] text-emerald-200/80">Saldo User</div>
+                <div className="mt-1 font-semibold text-white">
+                  {formatRupiah(Number(profile?.balance || 0))}
+                </div>
+              </div>
+              <Wallet className="h-5 w-5 text-emerald-300" />
+            </div>
+          )}
+
+          <div className="hide-scrollbar overflow-x-auto pb-1">
+            <div className="flex min-w-max gap-2 pr-2">
+              {mobileLinks.map((item) => {
+                const Icon = item.icon;
+                const commonClassName =
+                  "inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-100 transition hover:bg-white/10";
+
+                return item.external ? (
+                  <a
+                    key={item.label}
+                    href={item.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={commonClassName}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {item.label}
+                  </a>
+                ) : (
+                  <Link key={item.label} href={item.href} className={commonClassName}>
+                    <Icon className="h-4 w-4" />
+                    {item.label}
+                  </Link>
+                );
+              })}
+
+              {user ? (
+                <div className="shrink-0">
+                  <LogoutButton />
+                </div>
+              ) : (
+                <>
+                  <Link
+                    href="/login"
+                    className="inline-flex items-center whitespace-nowrap rounded-full border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-100"
+                  >
+                    Login
+                  </Link>
+                  <Link
+                    href="/register"
+                    className="inline-flex items-center whitespace-nowrap rounded-full bg-brand-500 px-4 py-3 text-sm font-medium text-white"
+                  >
+                    Register
+                  </Link>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </header>

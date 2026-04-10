@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Download, ServerCog, Wallet } from "lucide-react";
+import { Copy, Download, ServerCog, Wallet } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +16,8 @@ export default async function OrdersPage() {
 
   const { data: orders } = await supabase
     .from("transactions")
-    .select(`
+    .select(
+      `
       id,
       order_id,
       status,
@@ -30,7 +31,8 @@ export default async function OrdersPage() {
       created_at,
       products ( id, name, category, image_url, service_type ),
       app_credentials ( account_data )
-    `)
+    `
+    )
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
@@ -45,20 +47,36 @@ export default async function OrdersPage() {
         <div className="space-y-5">
           {orders.map((order) => {
             const product = Array.isArray(order.products) ? order.products[0] : order.products;
-            const credential = Array.isArray(order.app_credentials) ? order.app_credentials[0] : order.app_credentials;
+            const credential = Array.isArray(order.app_credentials)
+              ? order.app_credentials[0]
+              : order.app_credentials;
             const fulfillmentData = (order as any).fulfillment_data;
             const isPanel = (product as any)?.service_type === "pterodactyl";
 
             return (
               <Card key={order.id} className="grid gap-5 lg:grid-cols-[140px_1fr_auto]">
-                <img src={product?.image_url || "/placeholder.png"} alt={product?.name || "Product"} className="h-36 w-full rounded-2xl object-cover" />
+                <img
+                  src={product?.image_url || "/placeholder.png"}
+                  alt={product?.name || "Product"}
+                  className="h-36 w-full rounded-2xl object-cover"
+                />
 
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge>{product?.category || "Produk"}</Badge>
-                    <Badge className={isPanel ? "text-brand-200" : "text-slate-300"}>{isPanel ? "Panel Pterodactyl" : "Akun / Credential"}</Badge>
-                    <Badge className={(order as any).payment_method === "balance" ? "text-emerald-300" : "text-amber-300"}>
-                      {(order as any).payment_method === "balance" ? "Bayar dengan saldo" : "Bayar dengan Midtrans"}
+                    <Badge className={isPanel ? "text-brand-200" : "text-slate-300"}>
+                      {isPanel ? "Panel Pterodactyl" : "Akun / Credential"}
+                    </Badge>
+                    <Badge
+                      className={
+                        (order as any).payment_method === "balance"
+                          ? "text-emerald-300"
+                          : "text-amber-300"
+                      }
+                    >
+                      {(order as any).payment_method === "balance"
+                        ? "Bayar dengan saldo"
+                        : "Bayar dengan Midtrans"}
                     </Badge>
                     <RealtimeStatusBadge transactionId={order.id} initialStatus={order.status} />
                   </div>
@@ -78,7 +96,7 @@ export default async function OrdersPage() {
                   </div>
 
                   {credential?.account_data && (
-                    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 font-mono text-sm text-white">
+                    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 font-mono text-sm text-white whitespace-pre-wrap">
                       {credential.account_data}
                     </div>
                   )}
@@ -90,7 +108,9 @@ export default async function OrdersPage() {
                         Detail panel yang berhasil dibuat
                       </div>
                       <div>Panel URL: {fulfillmentData.panel_url || "-"}</div>
-                      <div>Email panel: {fulfillmentData.panel_email || "-"}</div>
+                      <div>Username Login: {fulfillmentData.panel_username || "-"}</div>
+                      <div>Email Login: {fulfillmentData.panel_email || "-"}</div>
+                      <div>Password Login: {fulfillmentData.panel_password || "-"}</div>
                       <div>Server UUID: {fulfillmentData.server_uuid || "-"}</div>
                     </div>
                   )}
@@ -103,7 +123,9 @@ export default async function OrdersPage() {
                     </Link>
                   ) : (
                     <Link href={`/products/${product?.id}`}>
-                      <Button variant="secondary" className="w-full">Lihat Produk</Button>
+                      <Button variant="secondary" className="w-full">
+                        Lihat Produk
+                      </Button>
                     </Link>
                   )}
 
@@ -129,7 +151,9 @@ export default async function OrdersPage() {
           })}
         </div>
       ) : (
-        <Card><div className="text-slate-300">Belum ada transaksi.</div></Card>
+        <Card>
+          <div className="text-slate-300">Belum ada transaksi.</div>
+        </Card>
       )}
     </div>
   );

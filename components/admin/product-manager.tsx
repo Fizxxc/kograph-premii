@@ -45,7 +45,6 @@ export function ProductManager({ products }: { products: Product[] }) {
 
   async function saveEdit(formData: FormData) {
     if (!editing) return;
-
     setLoading(true);
 
     try {
@@ -69,8 +68,8 @@ export function ProductManager({ products }: { products: Product[] }) {
 
   async function deleteProduct() {
     if (!deleteTarget) return;
-
     setLoading(true);
+
     try {
       const response = await fetch(`/api/admin/products/${deleteTarget.id}`, { method: "DELETE" });
       const json = await response.json();
@@ -118,31 +117,34 @@ export function ProductManager({ products }: { products: Product[] }) {
               </tr>
             </thead>
             <tbody className="text-slate-200">
-              {filteredProducts.map((product) => (
-                <tr key={product.id} className="border-t border-white/10 align-top">
-                  <td className="py-3">
-                    <div className="font-medium text-white">{product.name}</div>
-                    <div className="mt-1 max-w-sm text-xs text-slate-400">{product.description}</div>
-                  </td>
-                  <td className="py-3">{(product.service_type || "credential") === "pterodactyl" ? "Panel" : "Credential"}</td>
-                  <td className="py-3">{formatRupiah(product.price)}</td>
-                  <td className="py-3">{product.stock}</td>
-                  <td className="py-3">{product.sold_count || 0}</td>
-                  <td className="py-3">{product.is_active === false ? "Nonaktif" : "Aktif"}</td>
-                  <td className="py-3">
-                    <div className="flex gap-2">
-                      <Button variant="secondary" className="h-9 px-3" onClick={() => setEditing(product)}>
-                        <Pencil className="mr-2 h-4 w-4" />
-                        Edit
-                      </Button>
-                      <Button variant="danger" className="h-9 px-3" onClick={() => setDeleteTarget(product)}>
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {filteredProducts.map((product) => {
+                const isPanel = (product.service_type || "credential") === "pterodactyl";
+                return (
+                  <tr key={product.id} className="border-t border-white/10 align-top">
+                    <td className="py-3">
+                      <div className="font-medium text-white">{product.name}</div>
+                      <div className="mt-1 max-w-sm text-xs text-slate-400">{product.description}</div>
+                    </td>
+                    <td className="py-3">{isPanel ? "Panel" : "Credential"}</td>
+                    <td className="py-3">{formatRupiah(product.price)}</td>
+                    <td className="py-3">{isPanel ? "Auto Ready" : product.stock}</td>
+                    <td className="py-3">{product.sold_count || 0}</td>
+                    <td className="py-3">{product.is_active === false ? "Nonaktif" : "Aktif"}</td>
+                    <td className="py-3">
+                      <div className="flex gap-2">
+                        <Button variant="secondary" className="h-9 px-3" onClick={() => setEditing(product)}>
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Edit
+                        </Button>
+                        <Button variant="danger" className="h-9 px-3" onClick={() => setDeleteTarget(product)}>
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -156,7 +158,9 @@ export function ProductManager({ products }: { products: Product[] }) {
                 <div className="text-lg font-semibold text-white">Edit Produk</div>
                 <div className="text-sm text-slate-400">{editing.name}</div>
               </div>
-              <Button variant="ghost" onClick={() => setEditing(null)}>Tutup</Button>
+              <Button variant="ghost" onClick={() => setEditing(null)}>
+                Tutup
+              </Button>
             </div>
 
             <form
@@ -177,8 +181,12 @@ export function ProductManager({ products }: { products: Product[] }) {
                   defaultValue={editing.service_type || "credential"}
                   className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none"
                 >
-                  <option value="credential" className="bg-slate-900">Akun / Credential</option>
-                  <option value="pterodactyl" className="bg-slate-900">Panel Pterodactyl</option>
+                  <option value="credential" className="bg-slate-900">
+                    Akun / Credential
+                  </option>
+                  <option value="pterodactyl" className="bg-slate-900">
+                    Panel Pterodactyl
+                  </option>
                 </select>
               </div>
               <Input name="image_url" defaultValue={editing.image_url} placeholder="URL gambar baru (opsional)" />
@@ -187,7 +195,7 @@ export function ProductManager({ products }: { products: Product[] }) {
                 name="pterodactyl_config"
                 rows={10}
                 defaultValue={editing.pterodactyl_config ? JSON.stringify(editing.pterodactyl_config, null, 2) : ""}
-                placeholder='{"memory":2048,"disk":10240,"cpu":150}'
+                placeholder='{"memory":2048,"disk":10240,"cpu":150,"docker_image":"ghcr.io/pterodactyl/yolks:nodejs_18"}'
               />
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
@@ -199,7 +207,9 @@ export function ProductManager({ products }: { products: Product[] }) {
                   Produk aktif di katalog
                 </label>
               </div>
-              <Button type="submit" className="w-full" disabled={loading}>{loading ? "Menyimpan..." : "Simpan Perubahan"}</Button>
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? "Menyimpan..." : "Simpan Perubahan"}
+              </Button>
             </form>
           </div>
         </div>

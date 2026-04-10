@@ -24,8 +24,11 @@ import { toast } from "sonner";
 type FulfillmentData = {
   type?: string;
   panel_url?: string | null;
+  panel_username?: string | null;
   panel_email?: string | null;
+  panel_password?: string | null;
   server_uuid?: string | null;
+  requested_username?: string | null;
 };
 
 type WaitingPaymentClientProps = {
@@ -53,12 +56,14 @@ export function WaitingPaymentClient({
 }: WaitingPaymentClientProps) {
   const [status, setStatus] = useState(transaction.status);
   const [accountData, setAccountData] = useState(initialAccountData);
-  const [fulfillmentData, setFulfillmentData] = useState<FulfillmentData | null>(transaction.fulfillment_data);
+  const [fulfillmentData, setFulfillmentData] = useState<FulfillmentData | null>(
+    transaction.fulfillment_data
+  );
   const [isScriptReady, setIsScriptReady] = useState(false);
   const [openingSnap, setOpeningSnap] = useState(false);
   const [showSuccess, setShowSuccess] = useState(Boolean(initialAccountData || transaction.fulfillment_data));
+
   const isPanel = transaction.service_type === "pterodactyl";
-  const hasDeliveredData = Boolean(accountData || fulfillmentData);
 
   useEffect(() => {
     if (transaction.payment_method === "balance") {
@@ -68,45 +73,21 @@ export function WaitingPaymentClient({
 
     const snapUrl = getMidtransSnapScriptUrl();
     const clientKey = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY ?? "";
-
-    if (!clientKey) {
-      console.error("[MIDTRANS] NEXT_PUBLIC_MIDTRANS_CLIENT_KEY tidak ditemukan.");
-      setIsScriptReady(false);
-      return;
-    }
+    if (!clientKey) return;
 
     const existing = document.querySelector<HTMLScriptElement>('script[data-midtrans="snap"]');
-
-    if (existing) {
-      const existingSrc = existing.getAttribute("src") ?? "";
-      const existingClientKey = existing.getAttribute("data-client-key") ?? "";
-
-      const isSameScript = existingSrc === snapUrl && existingClientKey === clientKey;
-
-      if (isSameScript && typeof window !== "undefined" && window.snap) {
-        setIsScriptReady(true);
-        return;
-      }
-
-      existing.remove();
+    if (existing && window.snap) {
+      setIsScriptReady(true);
+      return;
     }
-
-    setIsScriptReady(false);
 
     const script = document.createElement("script");
     script.src = snapUrl;
     script.async = true;
     script.setAttribute("data-client-key", clientKey);
     script.setAttribute("data-midtrans", "snap");
-
-    script.onload = () => {
-      setIsScriptReady(true);
-    };
-
-    script.onerror = () => {
-      setIsScriptReady(false);
-    };
-
+    script.onload = () => setIsScriptReady(true);
+    script.onerror = () => setIsScriptReady(false);
     document.body.appendChild(script);
   }, [transaction.payment_method]);
 
@@ -125,33 +106,14 @@ export function WaitingPaymentClient({
         },
         async (payload) => {
           const nextStatus = String((payload.new as { status?: string }).status ?? "pending");
-          const nextFulfillment = (payload.new as { fulfillment_data?: FulfillmentData | null }).fulfillment_data ?? null;
+          const nextFulfillment = (payload.new as { fulfillment_data?: FulfillmentData | null })
+            .fulfillment_data;
+
           setStatus(nextStatus);
-          setFulfillmentData(nextFulfillment);
+          setFulfillmentData(nextFulfillment ?? null);
 
           if (nextStatus === "settlement") {
             await fetchCredential();
-            if (nextFulfillment) setShowSuccess(true);
-          }
-        }
-      )
-      .subscribe();
-
-    const credentialChannel = supabase
-      .channel(`credential-${transaction.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "app_credentials",
-          filter: `transaction_id=eq.${transaction.id}`
-        },
-        (payload) => {
-          const nextAccountData = String((payload.new as { account_data?: string }).account_data ?? "");
-
-          if (nextAccountData) {
-            setAccountData(nextAccountData);
             setShowSuccess(true);
           }
         }
@@ -160,31 +122,21 @@ export function WaitingPaymentClient({
 
     return () => {
       supabase.removeChannel(txChannel);
-      supabase.removeChannel(credentialChannel);
     };
   }, [transaction.id]);
 
   async function fetchCredential() {
     const supabase = createBrowserSupabaseClient();
-
     const { data } = await supabase
       .from("app_credentials")
       .select("account_data")
       .eq("transaction_id", transaction.id)
       .maybeSingle();
 
-    if (data?.account_data) {
-      setAccountData(data.account_data);
-      setShowSuccess(true);
-    }
+    if (data?.account_data) setAccountData(data.account_data);
   }
 
   async function openSnap() {
-    if (transaction.payment_method === "balance") {
-      toast.success("Order ini dibayar dengan saldo akun. Tidak perlu membuka Snap.");
-      return;
-    }
-
     if (typeof window === "undefined" || !window.snap || !isScriptReady) {
       toast.error("Midtrans Snap belum siap. Coba refresh halaman lalu ulangi.");
       return;
@@ -201,16 +153,16 @@ export function WaitingPaymentClient({
       window.snap.pay(transaction.snap_token, {
         onSuccess: async () => {
           await fetchCredential();
+          setShowSuccess(true);
         },
         onPending: () => {
-          console.log("[MIDTRANS] Payment pending");
+          toast.message("Pembayaran Anda masih menunggu konfirmasi.");
         },
-        onError: (result: unknown) => {
-          console.error("[MIDTRANS] Payment error:", result);
+        onError: () => {
           toast.error("Terjadi kendala saat membuka pembayaran Midtrans.");
         },
         onClose: () => {
-          console.log("[MIDTRANS] Snap popup closed");
+          toast.message("Popup pembayaran ditutup.");
         }
       });
     } finally {
@@ -218,26 +170,20 @@ export function WaitingPaymentClient({
     }
   }
 
-  async function copyCredential() {
-    if (!accountData) return;
-    await navigator.clipboard.writeText(accountData);
-    toast.success("Credential berhasil disalin.");
-  }
-
-  async function copyStatusToken() {
-    await navigator.clipboard.writeText(transaction.status_token);
-    toast.success("Token status berhasil disalin.");
-  }
-
-  async function copyPanelInfo() {
-    const text = [
-      `Panel URL: ${fulfillmentData?.panel_url || "-"}`,
-      `Email: ${fulfillmentData?.panel_email || "-"}`,
-      `Server UUID: ${fulfillmentData?.server_uuid || "-"}`
-    ].join("\n");
+  async function copyText(text: string, label: string) {
     await navigator.clipboard.writeText(text);
-    toast.success("Informasi panel berhasil disalin.");
+    toast.success(`${label} berhasil disalin.`);
   }
+
+  const panelInfoText = fulfillmentData
+    ? [
+        `Panel URL: ${fulfillmentData.panel_url || "-"}`,
+        `Username: ${fulfillmentData.panel_username || "-"}`,
+        `Email: ${fulfillmentData.panel_email || "-"}`,
+        `Password: ${fulfillmentData.panel_password || "-"}`,
+        `Server UUID: ${fulfillmentData.server_uuid || "-"}`
+      ].join("\n")
+    : "";
 
   return (
     <>
@@ -248,59 +194,46 @@ export function WaitingPaymentClient({
             <h1 className="mt-2 text-3xl font-bold text-white">{transaction.product_name}</h1>
             <p className="mt-3 text-sm text-slate-300">
               {isPanel
-                ? "Setelah pembayaran settle, sistem akan membuat panel Pterodactyl otomatis dan data panel akan tampil di halaman ini."
+                ? "Setelah pembayaran terverifikasi, panel akan dibuat otomatis dan detail login akan muncul di halaman ini tanpa perlu refresh manual."
                 : "Setelah webhook Midtrans mengonfirmasi settlement, halaman ini akan otomatis menampilkan credential tanpa refresh."}
             </p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Order ID</div>
-              <div className="mt-2 break-all text-sm font-semibold text-white">{transaction.order_id}</div>
-            </div>
-
+            <InfoBox label="Order ID" value={transaction.order_id} />
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
               <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Status</div>
               <div className="mt-2">
                 <RealtimeStatusBadge transactionId={transaction.id} initialStatus={status} />
               </div>
             </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Base Amount</div>
-              <div className="mt-2 text-sm font-semibold text-white">{formatRupiah(transaction.amount)}</div>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Final Amount</div>
-              <div className="mt-2 text-sm font-semibold text-white">{formatRupiah(transaction.final_amount)}</div>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Created At</div>
-              <div className="mt-2 text-sm font-semibold text-white">{formatDate(transaction.created_at)}</div>
-            </div>
-
+            <InfoBox label="Base Amount" value={formatRupiah(transaction.amount)} />
+            <InfoBox label="Final Amount" value={formatRupiah(transaction.final_amount)} />
+            <InfoBox label="Created At" value={formatDate(transaction.created_at)} />
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
               <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Token Status Bot</div>
               <div className="mt-2 flex items-center justify-between gap-2">
                 <div className="break-all text-sm font-semibold text-white">{transaction.status_token}</div>
-                <Button variant="ghost" className="h-9 px-3" onClick={copyStatusToken}>Copy</Button>
+                <Button variant="ghost" className="h-9 px-3" onClick={() => copyText(transaction.status_token, "Token status") }>
+                  Copy
+                </Button>
               </div>
             </div>
           </div>
 
-          {status === "settlement" && accountData && (
+          {!isPanel && status === "settlement" && accountData && (
             <div className="rounded-3xl border border-emerald-500/30 bg-emerald-500/10 p-5">
               <div className="mb-3 flex items-center gap-2 text-emerald-300">
                 <CheckCircle2 className="h-5 w-5" />
                 <span className="font-semibold">Pembayaran berhasil</span>
               </div>
 
-              <div className="rounded-2xl bg-slate-950/80 p-4 font-mono text-sm text-white">{accountData}</div>
+              <div className="rounded-2xl bg-slate-950/80 p-4 font-mono text-sm text-white">
+                {accountData}
+              </div>
 
               <div className="mt-4 flex flex-wrap gap-3">
-                <Button variant="secondary" onClick={copyCredential}>
+                <Button variant="secondary" onClick={() => copyText(accountData, "Credential") }>
                   <Copy className="mr-2 h-4 w-4" />
                   Copy Credential
                 </Button>
@@ -314,28 +247,24 @@ export function WaitingPaymentClient({
             </div>
           )}
 
-          {status === "settlement" && isPanel && fulfillmentData && (
+          {isPanel && status === "settlement" && fulfillmentData && (
             <div className="rounded-3xl border border-brand-500/30 bg-brand-500/10 p-5">
               <div className="mb-3 flex items-center gap-2 text-brand-200">
                 <ServerCog className="h-5 w-5" />
-                <span className="font-semibold">Panel berhasil dibuat</span>
+                <span className="font-semibold">Panel berhasil dibuat otomatis</span>
               </div>
-              <div className="grid gap-3 text-sm text-slate-200 md:grid-cols-2">
-                <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
-                  <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Panel URL</div>
-                  <div className="mt-2 break-all text-white">{fulfillmentData.panel_url || "-"}</div>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
-                  <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Email Login</div>
-                  <div className="mt-2 break-all text-white">{fulfillmentData.panel_email || "-"}</div>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4 md:col-span-2">
-                  <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Server UUID</div>
-                  <div className="mt-2 break-all text-white">{fulfillmentData.server_uuid || "-"}</div>
-                </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <InfoBox label="Panel URL" value={fulfillmentData.panel_url || "-"} />
+                <InfoBox label="Username Login" value={fulfillmentData.panel_username || "-"} />
+                <InfoBox label="Email Login" value={fulfillmentData.panel_email || "-"} />
+                <InfoBox label="Password Login" value={fulfillmentData.panel_password || "-"} />
+                <InfoBox label="Server UUID" value={fulfillmentData.server_uuid || "-"} />
+                <InfoBox label="Username yang diminta" value={fulfillmentData.requested_username || "-"} />
               </div>
+
               <div className="mt-4 flex flex-wrap gap-3">
-                <Button variant="secondary" onClick={copyPanelInfo}>
+                <Button variant="secondary" onClick={() => copyText(panelInfoText, "Info panel") }>
                   <Copy className="mr-2 h-4 w-4" />
                   Copy Info Panel
                 </Button>
@@ -352,7 +281,6 @@ export function WaitingPaymentClient({
         <div className="space-y-6">
           <Card className="space-y-4">
             <div className="text-lg font-semibold text-white">Status Sinkronisasi</div>
-
             <Badge
               className={
                 status === "settlement"
@@ -364,40 +292,36 @@ export function WaitingPaymentClient({
             >
               {normalizeStatus(status)}
             </Badge>
-
             <div className="text-sm text-slate-300">
-              Cek juga via Telegram bot <span className="font-semibold text-white">@{SITE.botUsername}</span> dengan command:
+              Cek juga via Telegram bot <span className="font-semibold text-white">@{SITE.botUsername}</span>
             </div>
-
             <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4 font-mono text-sm text-white">
               /status {transaction.status_token}
             </div>
           </Card>
 
-          <motion.div drag dragMomentum={false} dragElastic={0.08} className="cursor-grab active:cursor-grabbing">
-            <Card className="space-y-4 border-brand-500/30 bg-gradient-to-br from-brand-600/20 to-slate-950/90">
-              <div className="flex items-center gap-3">
-                <div className="rounded-2xl bg-brand-600/20 p-3 text-brand-200">
-                  <Wallet className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="font-semibold text-white">Metode Pembayaran</div>
-                  <div className="text-sm text-slate-300">
-                    {transaction.payment_method === "balance"
-                      ? "Dibayar langsung dari saldo akun"
-                      : "QRIS, GoPay, bank transfer, dan channel Midtrans lainnya"}
-                  </div>
+          <Card className="space-y-4 border-brand-500/30 bg-gradient-to-br from-brand-600/20 to-slate-950/90">
+            <div className="flex items-center gap-3">
+              <div className="rounded-2xl bg-brand-600/20 p-3 text-brand-200">
+                <Wallet className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="font-semibold text-white">Metode Pembayaran</div>
+                <div className="text-sm text-slate-300">
+                  {transaction.payment_method === "balance"
+                    ? "Order ini diproses dari saldo yang tersimpan di web"
+                    : "QRIS, e-wallet, virtual account | automatic payment"}
                 </div>
               </div>
+            </div>
 
+            {transaction.payment_method !== "balance" && (
               <Button
                 className="w-full"
                 onClick={openSnap}
-                disabled={transaction.payment_method === "balance" || !isScriptReady || status === "settlement" || openingSnap}
+                disabled={!isScriptReady || status === "settlement" || openingSnap}
               >
-                {transaction.payment_method === "balance" ? (
-                  "Pembayaran lewat saldo"
-                ) : openingSnap ? (
+                {openingSnap ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Membuka Snap...
@@ -408,8 +332,8 @@ export function WaitingPaymentClient({
                   "Bayar Disini"
                 )}
               </Button>
-            </Card>
-          </motion.div>
+            )}
+          </Card>
 
           <Card>
             <div className="flex items-center gap-3">
@@ -417,11 +341,13 @@ export function WaitingPaymentClient({
               <div className="font-semibold text-white">Bot & Support</div>
             </div>
 
-            <div className="mt-3 text-sm text-slate-300">
-              Gunakan bot cek order untuk melihat status pesanan, dan bot auto order untuk membuat order serta top up saldo langsung dari Telegram.
+            <div className="mt-3 space-y-2 text-sm text-slate-300">
+              <div>Cek order di @{SITE.botUsername}</div>
+              <div>Auto order di @{SITE.autoOrderBotUsername}</div>
+              <div>Hubungi admin di @{SITE.support.telegram}</div>
             </div>
 
-            <div className="mt-4 flex flex-col gap-2 text-sm">
+            <div className="mt-4 flex flex-wrap gap-3">
               <a href={`https://t.me/${SITE.botUsername}`} target="_blank" rel="noreferrer" className="font-semibold text-brand-300">
                 Buka @{SITE.botUsername}
               </a>
@@ -433,7 +359,7 @@ export function WaitingPaymentClient({
         </div>
       </div>
 
-      {showSuccess && hasDeliveredData && (
+      {showSuccess && (accountData || fulfillmentData) && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 p-4">
           <motion.div
             initial={{ opacity: 0, y: 18, scale: 0.96 }}
@@ -445,25 +371,19 @@ export function WaitingPaymentClient({
               <div>
                 <div className="text-lg font-bold text-white">Pembayaran Berhasil</div>
                 <div className="text-sm text-slate-300">
-                  {isPanel ? "Panel Anda sudah dibuat dan siap diakses." : "Credential Anda sudah aktif dan siap dipakai."}
+                  {isPanel
+                    ? "Detail login panel Anda sudah siap."
+                    : "Credential Anda sudah aktif dan siap dipakai."}
                 </div>
               </div>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white">
-              {isPanel ? (
-                <div className="space-y-2">
-                  <div>Panel URL: {fulfillmentData?.panel_url || "-"}</div>
-                  <div>Email Login: {fulfillmentData?.panel_email || "-"}</div>
-                  <div>Server UUID: {fulfillmentData?.server_uuid || "-"}</div>
-                </div>
-              ) : (
-                <div className="font-mono">{accountData}</div>
-              )}
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 font-mono text-sm text-white whitespace-pre-wrap">
+              {isPanel ? panelInfoText : accountData}
             </div>
 
             <div className="mt-5 flex gap-3">
-              <Button className="flex-1" onClick={isPanel ? copyPanelInfo : copyCredential}>
+              <Button className="flex-1" onClick={() => copyText(isPanel ? panelInfoText : accountData || "", isPanel ? "Info panel" : "Credential") }>
                 <Copy className="mr-2 h-4 w-4" />
                 Copy
               </Button>
@@ -475,5 +395,14 @@ export function WaitingPaymentClient({
         </div>
       )}
     </>
+  );
+}
+
+function InfoBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+      <div className="text-xs uppercase tracking-[0.2em] text-slate-400">{label}</div>
+      <div className="mt-2 break-all text-sm font-semibold text-white">{value}</div>
+    </div>
   );
 }
