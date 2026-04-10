@@ -2,17 +2,31 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ImagePlus } from "lucide-react";
+import { ImagePlus, ServerCog, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 
+const panelConfigExample = `{
+  "nest_id": 1,
+  "egg_id": 1,
+  "allocation_id": 1,
+  "location_id": 1,
+  "memory": 2048,
+  "disk": 10240,
+  "cpu": 150,
+  "databases": 1,
+  "backups": 1,
+  "allocations": 1
+}`;
+
 export function CreateProductForm() {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const [loading, setLoading] = useState(false);
+  const [serviceType, setServiceType] = useState<"credential" | "pterodactyl">("credential");
 
   async function submit(formData: FormData) {
     setLoading(true);
@@ -24,6 +38,7 @@ export function CreateProductForm() {
 
       toast.success("Produk berhasil dibuat.");
       formRef.current?.reset();
+      setServiceType("credential");
       router.refresh();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Gagal membuat produk");
@@ -36,7 +51,9 @@ export function CreateProductForm() {
     <Card>
       <div className="mb-5">
         <div className="text-lg font-semibold text-white">Tambah Produk Manual</div>
-        <p className="mt-1 text-sm text-slate-300">Upload gambar ke Supabase Storage dan simpan produk baru.</p>
+        <p className="mt-1 text-sm text-slate-300">
+          Tambahkan akun premium biasa atau menu panel Pterodactyl tanpa mengganggu flow toko yang sudah berjalan.
+        </p>
       </div>
 
       <form
@@ -48,14 +65,35 @@ export function CreateProductForm() {
         }}
         className="space-y-4"
       >
-        <Input name="name" placeholder="Nama produk" required />
-        <Input name="category" placeholder="Kategori" required />
-        <Input name="price" type="number" min="0" placeholder="Harga" required />
+        <div className="grid gap-4 md:grid-cols-2">
+          <Input name="name" placeholder="Nama produk" required />
+          <Input name="category" placeholder="Kategori" required />
+          <Input name="price" type="number" min="0" placeholder="Harga" required />
+          <select
+            name="service_type"
+            value={serviceType}
+            onChange={(e) => setServiceType(e.target.value as "credential" | "pterodactyl")}
+            className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none"
+          >
+            <option value="credential" className="bg-slate-900">Akun / Credential</option>
+            <option value="pterodactyl" className="bg-slate-900">Panel Pterodactyl</option>
+          </select>
+          <Input name="sold_count" type="number" min="0" placeholder="Jumlah terjual awal" defaultValue={0} />
+        </div>
+
         <Textarea name="description" placeholder="Deskripsi produk" required />
-        <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-200">
-          <input type="checkbox" name="featured" value="true" />
-          Jadikan featured
-        </label>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
+            <input type="checkbox" name="featured" value="true" />
+            Jadikan featured
+          </label>
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
+            <input type="checkbox" name="is_active" value="true" defaultChecked />
+            Produk aktif & tampil di katalog
+          </label>
+        </div>
+
         <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 p-4">
           <label className="flex cursor-pointer items-center gap-3 text-sm text-slate-200">
             <ImagePlus className="h-4 w-4 text-brand-300" />
@@ -64,7 +102,31 @@ export function CreateProductForm() {
           </label>
         </div>
 
-        <Button className="w-full" type="submit" disabled={loading}>{loading ? "Menyimpan..." : "Simpan Produk"}</Button>
+        {serviceType === "pterodactyl" && (
+          <div className="space-y-3 rounded-3xl border border-brand-500/20 bg-brand-500/10 p-5">
+            <div className="flex items-center gap-2 text-white">
+              <ServerCog className="h-4 w-4 text-brand-300" />
+              <div className="font-semibold">Konfigurasi Panel Pterodactyl</div>
+            </div>
+            <p className="text-sm leading-6 text-slate-300">
+              Isi JSON resource panel agar auto order bot dan webhook bisa membuat server secara otomatis setelah pembayaran settle.
+            </p>
+            <Textarea
+              name="pterodactyl_config"
+              rows={11}
+              defaultValue={panelConfigExample}
+              placeholder={panelConfigExample}
+            />
+            <div className="flex items-start gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-slate-200">
+              <ShieldCheck className="mt-0.5 h-4 w-4 text-emerald-300" />
+              Pastikan allocation, nest, egg, memory, disk, dan CPU sesuai panel Anda supaya provisioning tidak gagal.
+            </div>
+          </div>
+        )}
+
+        <Button className="w-full" type="submit" disabled={loading}>
+          {loading ? "Menyimpan..." : "Simpan Produk"}
+        </Button>
       </form>
     </Card>
   );

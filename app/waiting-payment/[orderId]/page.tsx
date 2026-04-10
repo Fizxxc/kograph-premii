@@ -21,7 +21,9 @@ export default async function WaitingPaymentPage({ params }: { params: { orderId
       snap_token,
       created_at,
       status_token,
-      products ( name )
+      payment_method,
+      fulfillment_data,
+      products ( name, service_type )
     `)
     .eq("order_id", params.orderId)
     .eq("user_id", user.id)
@@ -49,7 +51,10 @@ export default async function WaitingPaymentPage({ params }: { params: { orderId
         snap_token: transaction.snap_token,
         created_at: transaction.created_at,
         product_name: productValue?.name || "Produk Premium",
-        status_token: transaction.status_token
+        status_token: transaction.status_token,
+        payment_method: (transaction as any).payment_method || "midtrans",
+        service_type: (productValue as any)?.service_type || "credential",
+        fulfillment_data: (transaction as any).fulfillment_data ?? null
       }}
       initialAccountData={credential?.account_data ?? null}
     />

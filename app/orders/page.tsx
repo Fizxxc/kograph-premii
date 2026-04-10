@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Download } from "lucide-react";
+import { Download, ServerCog, Wallet } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
@@ -25,8 +25,10 @@ export default async function OrdersPage() {
       final_amount,
       coupon_code,
       status_token,
+      payment_method,
+      fulfillment_data,
       created_at,
-      products ( id, name, category, image_url ),
+      products ( id, name, category, image_url, service_type ),
       app_credentials ( account_data )
     `)
     .eq("user_id", user.id)
@@ -44,6 +46,8 @@ export default async function OrdersPage() {
           {orders.map((order) => {
             const product = Array.isArray(order.products) ? order.products[0] : order.products;
             const credential = Array.isArray(order.app_credentials) ? order.app_credentials[0] : order.app_credentials;
+            const fulfillmentData = (order as any).fulfillment_data;
+            const isPanel = (product as any)?.service_type === "pterodactyl";
 
             return (
               <Card key={order.id} className="grid gap-5 lg:grid-cols-[140px_1fr_auto]">
@@ -52,6 +56,10 @@ export default async function OrdersPage() {
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge>{product?.category || "Produk"}</Badge>
+                    <Badge className={isPanel ? "text-brand-200" : "text-slate-300"}>{isPanel ? "Panel Pterodactyl" : "Akun / Credential"}</Badge>
+                    <Badge className={(order as any).payment_method === "balance" ? "text-emerald-300" : "text-amber-300"}>
+                      {(order as any).payment_method === "balance" ? "Bayar dengan saldo" : "Bayar dengan Midtrans"}
+                    </Badge>
                     <RealtimeStatusBadge transactionId={order.id} initialStatus={order.status} />
                   </div>
 
@@ -74,17 +82,39 @@ export default async function OrdersPage() {
                       {credential.account_data}
                     </div>
                   )}
+
+                  {isPanel && fulfillmentData && (
+                    <div className="rounded-2xl border border-brand-500/20 bg-brand-500/10 p-4 text-sm text-slate-200">
+                      <div className="mb-2 flex items-center gap-2 font-semibold text-white">
+                        <ServerCog className="h-4 w-4 text-brand-300" />
+                        Detail panel yang berhasil dibuat
+                      </div>
+                      <div>Panel URL: {fulfillmentData.panel_url || "-"}</div>
+                      <div>Email panel: {fulfillmentData.panel_email || "-"}</div>
+                      <div>Server UUID: {fulfillmentData.server_uuid || "-"}</div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex flex-col items-stretch gap-3">
                   {order.status === "pending" ? (
                     <Link href={`/waiting-payment/${order.order_id}`}>
-                      <Button className="w-full">Bayar</Button>
+                      <Button className="w-full">Lanjut Pembayaran</Button>
                     </Link>
                   ) : (
                     <Link href={`/products/${product?.id}`}>
                       <Button variant="secondary" className="w-full">Lihat Produk</Button>
                     </Link>
+                  )}
+
+                  {(order as any).payment_method === "balance" && (
+                    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-slate-200">
+                      <div className="mb-1 flex items-center gap-2 font-semibold text-white">
+                        <Wallet className="h-4 w-4 text-emerald-300" />
+                        Pembayaran saldo
+                      </div>
+                      Order ini diproses langsung dari saldo akun Anda.
+                    </div>
                   )}
 
                   <a href={`/api/invoice/${order.order_id}`} target="_blank" rel="noreferrer">

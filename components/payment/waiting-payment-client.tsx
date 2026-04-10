@@ -8,6 +8,7 @@ import {
   Download,
   Loader2,
   MessageCircleMore,
+  ServerCog,
   Wallet
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +20,13 @@ import { getMidtransSnapScriptUrl } from "@/lib/midtrans-client";
 import { SITE } from "@/lib/constants";
 import { RealtimeStatusBadge } from "@/components/status/realtime-status-badge";
 import { toast } from "sonner";
+
+type FulfillmentData = {
+  type?: string;
+  panel_url?: string | null;
+  panel_email?: string | null;
+  server_uuid?: string | null;
+};
 
 type WaitingPaymentClientProps = {
   transaction: {
@@ -32,6 +40,9 @@ type WaitingPaymentClientProps = {
     created_at: string;
     product_name: string;
     status_token: string;
+    payment_method: string;
+    service_type: string;
+    fulfillment_data: FulfillmentData | null;
   };
   initialAccountData: string | null;
 };
@@ -42,11 +53,19 @@ export function WaitingPaymentClient({
 }: WaitingPaymentClientProps) {
   const [status, setStatus] = useState(transaction.status);
   const [accountData, setAccountData] = useState(initialAccountData);
+  const [fulfillmentData, setFulfillmentData] = useState<FulfillmentData | null>(transaction.fulfillment_data);
   const [isScriptReady, setIsScriptReady] = useState(false);
   const [openingSnap, setOpeningSnap] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(Boolean(initialAccountData));
+  const [showSuccess, setShowSuccess] = useState(Boolean(initialAccountData || transaction.fulfillment_data));
+  const isPanel = transaction.service_type === "pterodactyl";
+  const hasDeliveredData = Boolean(accountData || fulfillmentData);
 
   useEffect(() => {
+    if (transaction.payment_method === "balance") {
+      setIsScriptReady(false);
+      return;
+    }
+
     const snapUrl = getMidtransSnapScriptUrl();
     const clientKey = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY ?? "";
 
@@ -56,16 +75,13 @@ export function WaitingPaymentClient({
       return;
     }
 
-    const existing = document.querySelector<HTMLScriptElement>(
-      'script[data-midtrans="snap"]'
-    );
+    const existing = document.querySelector<HTMLScriptElement>('script[data-midtrans="snap"]');
 
     if (existing) {
       const existingSrc = existing.getAttribute("src") ?? "";
       const existingClientKey = existing.getAttribute("data-client-key") ?? "";
 
-      const isSameScript =
-        existingSrc === snapUrl && existingClientKey === clientKey;
+      const isSameScript = existingSrc === snapUrl && existingClientKey === clientKey;
 
       if (isSameScript && typeof window !== "undefined" && window.snap) {
         setIsScriptReady(true);
@@ -84,22 +100,15 @@ export function WaitingPaymentClient({
     script.setAttribute("data-midtrans", "snap");
 
     script.onload = () => {
-      console.log("[MIDTRANS] Snap script loaded:", snapUrl);
       setIsScriptReady(true);
     };
 
     script.onerror = () => {
-      console.error("[MIDTRANS] Gagal memuat Snap script:", snapUrl);
       setIsScriptReady(false);
     };
 
     document.body.appendChild(script);
-
-    return () => {
-      // sengaja tidak remove script saat unmount
-      // agar tidak flicker jika user kembali ke halaman inii
-    };
-  }, []);
+  }, [transaction.payment_method]);
 
   useEffect(() => {
     const supabase = createBrowserSupabaseClient();
@@ -115,14 +124,14 @@ export function WaitingPaymentClient({
           filter: `id=eq.${transaction.id}`
         },
         async (payload) => {
-          const nextStatus = String(
-            (payload.new as { status?: string }).status ?? "pending"
-          );
-
+          const nextStatus = String((payload.new as { status?: string }).status ?? "pending");
+          const nextFulfillment = (payload.new as { fulfillment_data?: FulfillmentData | null }).fulfillment_data ?? null;
           setStatus(nextStatus);
+          setFulfillmentData(nextFulfillment);
 
           if (nextStatus === "settlement") {
             await fetchCredential();
+            if (nextFulfillment) setShowSuccess(true);
           }
         }
       )
@@ -139,9 +148,7 @@ export function WaitingPaymentClient({
           filter: `transaction_id=eq.${transaction.id}`
         },
         (payload) => {
-          const nextAccountData = String(
-            (payload.new as { account_data?: string }).account_data ?? ""
-          );
+          const nextAccountData = String((payload.new as { account_data?: string }).account_data ?? "");
 
           if (nextAccountData) {
             setAccountData(nextAccountData);
@@ -173,6 +180,11 @@ export function WaitingPaymentClient({
   }
 
   async function openSnap() {
+    if (transaction.payment_method === "balance") {
+      toast.success("Order ini dibayar dengan saldo akun. Tidak perlu membuka Snap.");
+      return;
+    }
+
     if (typeof window === "undefined" || !window.snap || !isScriptReady) {
       toast.error("Midtrans Snap belum siap. Coba refresh halaman lalu ulangi.");
       return;
@@ -217,87 +229,63 @@ export function WaitingPaymentClient({
     toast.success("Token status berhasil disalin.");
   }
 
+  async function copyPanelInfo() {
+    const text = [
+      `Panel URL: ${fulfillmentData?.panel_url || "-"}`,
+      `Email: ${fulfillmentData?.panel_email || "-"}`,
+      `Server UUID: ${fulfillmentData?.server_uuid || "-"}`
+    ].join("\n");
+    await navigator.clipboard.writeText(text);
+    toast.success("Informasi panel berhasil disalin.");
+  }
+
   return (
     <>
       <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
         <Card className="space-y-6">
           <div>
-            <div className="text-sm uppercase tracking-[0.2em] text-slate-400">
-              Waiting Payment
-            </div>
-            <h1 className="mt-2 text-3xl font-bold text-white">
-              {transaction.product_name}
-            </h1>
+            <div className="text-sm uppercase tracking-[0.2em] text-slate-400">Waiting Payment</div>
+            <h1 className="mt-2 text-3xl font-bold text-white">{transaction.product_name}</h1>
             <p className="mt-3 text-sm text-slate-300">
-              Setelah webhook Midtrans mengonfirmasi settlement, halaman ini
-              akan otomatis menampilkan credential tanpa refresh.
+              {isPanel
+                ? "Setelah pembayaran settle, sistem akan membuat panel Pterodactyl otomatis dan data panel akan tampil di halaman ini."
+                : "Setelah webhook Midtrans mengonfirmasi settlement, halaman ini akan otomatis menampilkan credential tanpa refresh."}
             </p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                Order ID
-              </div>
-              <div className="mt-2 break-all text-sm font-semibold text-white">
-                {transaction.order_id}
-              </div>
+              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Order ID</div>
+              <div className="mt-2 break-all text-sm font-semibold text-white">{transaction.order_id}</div>
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                Status
-              </div>
+              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Status</div>
               <div className="mt-2">
-                <RealtimeStatusBadge
-                  transactionId={transaction.id}
-                  initialStatus={status}
-                />
+                <RealtimeStatusBadge transactionId={transaction.id} initialStatus={status} />
               </div>
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                Base Amount
-              </div>
-              <div className="mt-2 text-sm font-semibold text-white">
-                {formatRupiah(transaction.amount)}
-              </div>
+              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Base Amount</div>
+              <div className="mt-2 text-sm font-semibold text-white">{formatRupiah(transaction.amount)}</div>
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                Final Amount
-              </div>
-              <div className="mt-2 text-sm font-semibold text-white">
-                {formatRupiah(transaction.final_amount)}
-              </div>
+              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Final Amount</div>
+              <div className="mt-2 text-sm font-semibold text-white">{formatRupiah(transaction.final_amount)}</div>
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                Created At
-              </div>
-              <div className="mt-2 text-sm font-semibold text-white">
-                {formatDate(transaction.created_at)}
-              </div>
+              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Created At</div>
+              <div className="mt-2 text-sm font-semibold text-white">{formatDate(transaction.created_at)}</div>
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                Token Status Bot
-              </div>
+              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Token Status Bot</div>
               <div className="mt-2 flex items-center justify-between gap-2">
-                <div className="break-all text-sm font-semibold text-white">
-                  {transaction.status_token}
-                </div>
-                <Button
-                  variant="ghost"
-                  className="h-9 px-3"
-                  onClick={copyStatusToken}
-                >
-                  Copy
-                </Button>
+                <div className="break-all text-sm font-semibold text-white">{transaction.status_token}</div>
+                <Button variant="ghost" className="h-9 px-3" onClick={copyStatusToken}>Copy</Button>
               </div>
             </div>
           </div>
@@ -309,21 +297,14 @@ export function WaitingPaymentClient({
                 <span className="font-semibold">Pembayaran berhasil</span>
               </div>
 
-              <div className="rounded-2xl bg-slate-950/80 p-4 font-mono text-sm text-white">
-                {accountData}
-              </div>
+              <div className="rounded-2xl bg-slate-950/80 p-4 font-mono text-sm text-white">{accountData}</div>
 
               <div className="mt-4 flex flex-wrap gap-3">
                 <Button variant="secondary" onClick={copyCredential}>
                   <Copy className="mr-2 h-4 w-4" />
                   Copy Credential
                 </Button>
-
-                <a
-                  href={`/api/invoice/${transaction.order_id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
+                <a href={`/api/invoice/${transaction.order_id}`} target="_blank" rel="noreferrer">
                   <Button>
                     <Download className="mr-2 h-4 w-4" />
                     Download Invoice PDF
@@ -332,13 +313,45 @@ export function WaitingPaymentClient({
               </div>
             </div>
           )}
+
+          {status === "settlement" && isPanel && fulfillmentData && (
+            <div className="rounded-3xl border border-brand-500/30 bg-brand-500/10 p-5">
+              <div className="mb-3 flex items-center gap-2 text-brand-200">
+                <ServerCog className="h-5 w-5" />
+                <span className="font-semibold">Panel berhasil dibuat</span>
+              </div>
+              <div className="grid gap-3 text-sm text-slate-200 md:grid-cols-2">
+                <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+                  <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Panel URL</div>
+                  <div className="mt-2 break-all text-white">{fulfillmentData.panel_url || "-"}</div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+                  <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Email Login</div>
+                  <div className="mt-2 break-all text-white">{fulfillmentData.panel_email || "-"}</div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4 md:col-span-2">
+                  <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Server UUID</div>
+                  <div className="mt-2 break-all text-white">{fulfillmentData.server_uuid || "-"}</div>
+                </div>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Button variant="secondary" onClick={copyPanelInfo}>
+                  <Copy className="mr-2 h-4 w-4" />
+                  Copy Info Panel
+                </Button>
+                {fulfillmentData.panel_url && (
+                  <a href={fulfillmentData.panel_url} target="_blank" rel="noreferrer">
+                    <Button>Buka Panel</Button>
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
         </Card>
 
         <div className="space-y-6">
           <Card className="space-y-4">
-            <div className="text-lg font-semibold text-white">
-              Status Sinkronisasi
-            </div>
+            <div className="text-lg font-semibold text-white">Status Sinkronisasi</div>
 
             <Badge
               className={
@@ -353,11 +366,7 @@ export function WaitingPaymentClient({
             </Badge>
 
             <div className="text-sm text-slate-300">
-              Cek juga via Telegram bot{" "}
-              <span className="font-semibold text-white">
-                @{SITE.botUsername}
-              </span>{" "}
-              dengan command:
+              Cek juga via Telegram bot <span className="font-semibold text-white">@{SITE.botUsername}</span> dengan command:
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4 font-mono text-sm text-white">
@@ -365,23 +374,18 @@ export function WaitingPaymentClient({
             </div>
           </Card>
 
-          <motion.div
-            drag
-            dragMomentum={false}
-            dragElastic={0.08}
-            className="cursor-grab active:cursor-grabbing"
-          >
+          <motion.div drag dragMomentum={false} dragElastic={0.08} className="cursor-grab active:cursor-grabbing">
             <Card className="space-y-4 border-brand-500/30 bg-gradient-to-br from-brand-600/20 to-slate-950/90">
               <div className="flex items-center gap-3">
                 <div className="rounded-2xl bg-brand-600/20 p-3 text-brand-200">
                   <Wallet className="h-5 w-5" />
                 </div>
                 <div>
-                  <div className="font-semibold text-white">
-                    Metode Pembayaran
-                  </div>
+                  <div className="font-semibold text-white">Metode Pembayaran</div>
                   <div className="text-sm text-slate-300">
-                    Qris All Pay,Gopay,Bank |Automatic Payment
+                    {transaction.payment_method === "balance"
+                      ? "Dibayar langsung dari saldo akun"
+                      : "QRIS, GoPay, bank transfer, dan channel Midtrans lainnya"}
                   </div>
                 </div>
               </div>
@@ -389,13 +393,11 @@ export function WaitingPaymentClient({
               <Button
                 className="w-full"
                 onClick={openSnap}
-                disabled={
-                  !isScriptReady ||
-                  status === "settlement" ||
-                  openingSnap
-                }
+                disabled={transaction.payment_method === "balance" || !isScriptReady || status === "settlement" || openingSnap}
               >
-                {openingSnap ? (
+                {transaction.payment_method === "balance" ? (
+                  "Pembayaran lewat saldo"
+                ) : openingSnap ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Membuka Snap...
@@ -412,26 +414,26 @@ export function WaitingPaymentClient({
           <Card>
             <div className="flex items-center gap-3">
               <MessageCircleMore className="h-5 w-5 text-brand-300" />
-              <div className="font-semibold text-white">Bot Support</div>
+              <div className="font-semibold text-white">Bot & Support</div>
             </div>
 
             <div className="mt-3 text-sm text-slate-300">
-              Bot akan menampilkan status orderan dan credential setelah pembayaran.
+              Gunakan bot cek order untuk melihat status pesanan, dan bot auto order untuk membuat order serta top up saldo langsung dari Telegram.
             </div>
 
-            <a
-              href={`https://t.me/${SITE.botUsername}`}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-4 inline-flex text-sm font-semibold text-brand-300"
-            >
-              Buka @{SITE.botUsername}
-            </a>
+            <div className="mt-4 flex flex-col gap-2 text-sm">
+              <a href={`https://t.me/${SITE.botUsername}`} target="_blank" rel="noreferrer" className="font-semibold text-brand-300">
+                Buka @{SITE.botUsername}
+              </a>
+              <a href={`https://t.me/${SITE.autoOrderBotUsername}`} target="_blank" rel="noreferrer" className="font-semibold text-fuchsia-300">
+                Buka @{SITE.autoOrderBotUsername}
+              </a>
+            </div>
           </Card>
         </div>
       </div>
 
-      {showSuccess && accountData && (
+      {showSuccess && hasDeliveredData && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 p-4">
           <motion.div
             initial={{ opacity: 0, y: 18, scale: 0.96 }}
@@ -441,29 +443,31 @@ export function WaitingPaymentClient({
             <div className="mb-4 flex items-center gap-3 text-emerald-300">
               <CheckCircle2 className="h-6 w-6" />
               <div>
-                <div className="text-lg font-bold text-white">
-                  Pembayaran Berhasil
-                </div>
+                <div className="text-lg font-bold text-white">Pembayaran Berhasil</div>
                 <div className="text-sm text-slate-300">
-                  Credential Anda sudah aktif dan siap dipakai.
+                  {isPanel ? "Panel Anda sudah dibuat dan siap diakses." : "Credential Anda sudah aktif dan siap dipakai."}
                 </div>
               </div>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 font-mono text-sm text-white">
-              {accountData}
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white">
+              {isPanel ? (
+                <div className="space-y-2">
+                  <div>Panel URL: {fulfillmentData?.panel_url || "-"}</div>
+                  <div>Email Login: {fulfillmentData?.panel_email || "-"}</div>
+                  <div>Server UUID: {fulfillmentData?.server_uuid || "-"}</div>
+                </div>
+              ) : (
+                <div className="font-mono">{accountData}</div>
+              )}
             </div>
 
             <div className="mt-5 flex gap-3">
-              <Button className="flex-1" onClick={copyCredential}>
+              <Button className="flex-1" onClick={isPanel ? copyPanelInfo : copyCredential}>
                 <Copy className="mr-2 h-4 w-4" />
                 Copy
               </Button>
-              <Button
-                className="flex-1"
-                variant="secondary"
-                onClick={() => setShowSuccess(false)}
-              >
+              <Button className="flex-1" variant="secondary" onClick={() => setShowSuccess(false)}>
                 Tutup
               </Button>
             </div>

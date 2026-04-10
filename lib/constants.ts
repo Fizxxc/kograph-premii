@@ -1,7 +1,8 @@
 export const SITE = {
   name: "Kograph Premium",
-  description: "Marketplace akun premium, panel Pterodactyl, dan saldo deposit dengan proses cepat dan aman.",
+  description: "Marketplace akun premium, panel Pterodactyl, dan saldo deposit dengan proses cepat, aman, dan lebih rapi untuk pengguna.",
   botUsername: "KographCheckBot",
+  autoOrderBotUsername: "KographAutoOrderBot",
   support: {
     whatsapp: "6288991114939",
     email: "kographh@gmail.com",
@@ -30,3 +31,5 @@ export const NAV_CATEGORIES = [
   "Music",
   "Panel Pterodactyl"
 ];
+
+export const QUICK_TOPUP_AMOUNTS = [25000, 50000, 100000, 250000];
