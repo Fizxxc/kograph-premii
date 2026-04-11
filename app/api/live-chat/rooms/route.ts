@@ -43,10 +43,24 @@ export async function POST(request: Request) {
     }).select("id").single();
     if (roomError) return NextResponse.json({ error: roomError.message }, { status: 500 });
 
-    const adminIds = Array.isArray(product.support_admin_ids) ? product.support_admin_ids.filter(Boolean) : [];
-    if (adminIds.length) {
-      await auth.admin.from("live_chat_room_admins").insert(adminIds.map((adminId: string) => ({ room_id: room.id, admin_user_id: adminId }))).catch(() => null);
-    }
+   const adminIds = Array.isArray(product.support_admin_ids)
+  ? product.support_admin_ids.filter(Boolean)
+  : [];
+
+if (adminIds.length) {
+  const { error: roomAdminsError } = await auth.admin
+    .from("live_chat_room_admins")
+    .insert(
+      adminIds.map((adminId: string) => ({
+        room_id: room.id,
+        admin_user_id: adminId,
+      }))
+    );
+
+  if (roomAdminsError) {
+    console.error("Failed to insert live chat room admins:", roomAdminsError);
+  }
+}
 
     await auth.admin.from("live_chat_messages").insert({ room_id: room.id, sender_user_id: auth.user.id, sender_role: auth.role, message: openerMessage });
     await notifyUsers(adminIds, `Chat baru: ${product.name}`, openerMessage, `/chat/${room.id}`);

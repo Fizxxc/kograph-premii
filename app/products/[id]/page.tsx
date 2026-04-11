@@ -17,9 +17,22 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
 
   const { data: product } = await supabase
     .from("products")
-    .select(
-      "id, name, price, description, category, image_url, stock, featured, sold_count, service_type, is_active"
-    )
+    .select(`
+    id,
+    name,
+    price,
+    description,
+    category,
+    image_url,
+    stock,
+    featured,
+    sold_count,
+    service_type,
+    is_active,
+    live_chat_enabled,
+    support_admin_ids,
+    external_link
+  `)
     .eq("id", params.id)
     .single();
 
@@ -66,6 +79,7 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
   const isPanel = (product.service_type || "credential") === "pterodactyl";
   const stockBadgeText = isPanel ? "Auto Ready 24/7" : product.stock > 0 ? `Stock ${product.stock}` : "Sold Out";
   const panelRange = getPanelPresetPriceRange();
+
 
   return (
     <div className="space-y-8">
@@ -120,8 +134,9 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
               </div>
             )}
 
-{product.live_chat_enabled && <LiveChatLauncher productId={product.id} />}
-
+            {Boolean(product.live_chat_enabled) && (
+              <LiveChatLauncher productId={product.id} />
+            )}
             <div className="grid gap-3 md:grid-cols-2">
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-300">
                 <div className="mb-2 flex items-center gap-2 font-semibold text-white">
