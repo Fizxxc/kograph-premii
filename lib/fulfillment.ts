@@ -7,6 +7,7 @@ import {
 } from "@/lib/pterodactyl";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { getDefaultWhatsappBotEnvironment } from "@/lib/panel-packages";
+import { isChatBasedService, isPanelService, isStockManagedService } from "@/lib/service-types";
 
 function safeUsername(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12) || `user${Date.now().toString().slice(-6)}`;
@@ -19,6 +20,13 @@ function buildPanelCredentials(preferredUsername?: string | null) {
   const email = `${username}@${emailDomain}`;
   const password = `KgP!${crypto.randomBytes(6).toString("base64url")}`;
   return { username, email, password };
+}
+
+function parseAdminChatIds() {
+  return String(process.env.TELEGRAM_ADMIN_CHAT_IDS || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 async function notifyTelegramProduct(tx: any, productName: string, fulfillmentData: any) {
@@ -44,6 +52,11 @@ async function notifyTelegramProduct(tx: any, productName: string, fulfillmentDa
       `<b>Email</b>: <code>${fulfillmentData.panel_email || "-"}</code>`,
       `<b>Password</b>: <code>${fulfillmentData.panel_password || "-"}</code>`,
       `<b>Spesifikasi</b>: RAM ${fulfillmentData.memory_text || "-"} • Disk ${fulfillmentData.disk_text || "-"} • CPU ${fulfillmentData.cpu_text || "-"}`
+    );
+  } else if (fulfillmentData?.type === "chat_service") {
+    lines.push(
+      "",
+      `Admin sudah menerima bukti pembayaran Anda dan room live chat siap dipakai untuk briefing, revisi, dan update progres.`
     );
   }
 
@@ -76,14 +89,105 @@ async function notifyTelegramTopup(userId: string, orderId: string, amount: numb
   ).catch(() => null);
 }
 
+async function ensureRoomForChatService(input: { admin: ReturnType<typeof createAdminSupabaseClient>; tx: any; product: any }) {
+  const admin = input.admin;
+  const existingRoomId = input.tx.fulfillment_data?.room_id || null;
+  if (existingRoomId) {
+    const { data: room } = await admin.from("live_chat_rooms").select("id").eq("id", existingRoomId).maybeSingle();
+    if (room?.id) return room.id as string;
+  }
+
+  const { data: recentRoom } = await admin
+    .from("live_chat_rooms")
+    .select("id")
+    .eq("product_id", input.product.id)
+    .eq("customer_user_id", input.tx.user_id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (recentRoom?.id) return recentRoom.id as string;
+
+  const { data: room, error } = await admin
+    .from("live_chat_rooms")
+    .insert({
+      product_id: input.product.id,
+      customer_user_id: input.tx.user_id,
+      telegram_chat_id: input.tx.telegram_id || null,
+      title: `Chat ${input.product.name}`,
+      status: "paid"
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+
+  const supportAdminIds = Array.isArray(input.product.support_admin_ids)
+    ? input.product.support_admin_ids.filter(Boolean)
+    : [];
+  if (supportAdminIds.length) {
+    await admin.from("live_chat_room_admins").insert(
+      supportAdminIds.map((adminUserId: string) => ({ room_id: room.id, admin_user_id: adminUserId }))
+    );
+  }
+
+  return room.id as string;
+}
+
+async function notifyAdminsForChatService(input: { admin: ReturnType<typeof createAdminSupabaseClient>; tx: any; product: any; roomId: string }) {
+  const admin = input.admin;
+  const amount = Number(input.tx.final_amount || 0);
+  const paymentMethod = String(input.tx.payment_method || "midtrans").toUpperCase();
+
+  await admin.from("live_chat_messages").insert([
+    {
+      room_id: input.roomId,
+      sender_user_id: null,
+      sender_role: "system",
+      message: `🛒 Order ${input.product.name} sudah dibayar. Admin bisa lanjutkan proses dari room ini.\n\nOrder ID: ${input.tx.order_id}\nMetode bayar: ${paymentMethod}\nTotal: Rp ${Intl.NumberFormat("id-ID").format(amount)}`
+    },
+    {
+      room_id: input.roomId,
+      sender_user_id: null,
+      sender_role: "system",
+      message: `✅ Bukti pembayaran otomatis dari sistem sudah masuk dan customer siap diarahkan ke proses briefing atau pengerjaan.`
+    }
+  ]).catch(() => null);
+
+  await admin
+    .from("live_chat_rooms")
+    .update({ status: "paid", last_message_at: new Date().toISOString() })
+    .eq("id", input.roomId);
+
+  const roomUrl = `${String(process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/$/, "")}/chat/${input.roomId}`;
+  const customerName = input.tx.user_id;
+  const text = [
+    `💬 <b>Order live chat sudah dibayar</b>`,
+    `#ROOM:${input.roomId}`,
+    "",
+    `<b>Produk</b>: ${input.product.name}`,
+    `<b>Order ID</b>: <code>${input.tx.order_id}</code>`,
+    `<b>Metode</b>: ${paymentMethod}`,
+    `<b>Total</b>: Rp ${Intl.NumberFormat("id-ID").format(amount)}`,
+    `<b>User</b>: <code>${customerName}</code>`,
+    "",
+    `Reply pesan ini untuk membalas customer dari Telegram, atau buka room web: ${roomUrl}`
+  ].join("\n");
+
+  for (const chatId of parseAdminChatIds()) {
+    await sendTelegramMessage(chatId, text, {
+      bot: "auto",
+      disable_web_page_preview: false
+    }).catch(() => null);
+  }
+}
+
 export async function fulfillProductOrder(orderId: string) {
   const admin = createAdminSupabaseClient();
 
   const { data: tx, error } = await admin
     .from("transactions")
     .select(
-      `id, order_id, user_id, product_id, status, coupon_code, telegram_id, payment_method, fulfillment_data,
-       products ( id, name, service_type, pterodactyl_config, sold_count, stock )`
+      `id, order_id, user_id, product_id, status, coupon_code, telegram_id, payment_method, final_amount, fulfillment_data,
+       products ( id, name, service_type, pterodactyl_config, sold_count, stock, live_chat_enabled, support_admin_ids )`
     )
     .eq("order_id", orderId)
     .single();
@@ -93,19 +197,46 @@ export async function fulfillProductOrder(orderId: string) {
   const product = Array.isArray((tx as any).products) ? (tx as any).products[0] : (tx as any).products;
   if (!product) throw new Error("Produk transaksi tidak ditemukan");
 
-  const isPanel = (product.service_type || "credential") === "pterodactyl";
+  const isPanel = isPanelService(product.service_type);
+  const isChatService = isChatBasedService(product.service_type) || Boolean(product.live_chat_enabled);
+  const isStockManaged = isStockManagedService(product.service_type);
 
-  if (!isPanel && (tx as any).status === "settlement") {
+  if (!isPanel && !isChatService && (tx as any).status === "settlement") {
     return { already_settled: true };
   }
 
-  if (!isPanel) {
+  if (isStockManaged) {
     const { data, error: rpcError } = await admin.rpc("fulfill_transaction", { p_order_id: orderId });
     if (rpcError) throw new Error(rpcError.message);
 
     await admin.from("products").update({ sold_count: Number(product.sold_count || 0) + 1 }).eq("id", product.id);
     await notifyTelegramProduct(tx, product.name, null);
     return data;
+  }
+
+  if (isChatService) {
+    if ((tx as any).status === "settlement" && (tx as any).fulfillment_data?.type === "chat_service") {
+      return { already_settled: true, fulfillment_data: (tx as any).fulfillment_data };
+    }
+
+    const roomId = await ensureRoomForChatService({ admin, tx, product });
+    const fulfillmentData = {
+      ...((tx as any).fulfillment_data || {}),
+      type: "chat_service",
+      room_id: roomId,
+      status_note: "Pembayaran valid. Admin sudah menerima notifikasi otomatis dan room live chat siap dipakai."
+    };
+
+    const { error: txUpdateError } = await admin
+      .from("transactions")
+      .update({ status: "settlement", fulfillment_data: fulfillmentData })
+      .eq("id", (tx as any).id);
+    if (txUpdateError) throw new Error(txUpdateError.message);
+
+    await admin.from("products").update({ sold_count: Number(product.sold_count || 0) + 1 }).eq("id", product.id);
+    await notifyAdminsForChatService({ admin, tx: { ...(tx as any), fulfillment_data: fulfillmentData }, product, roomId });
+    await notifyTelegramProduct({ ...(tx as any), fulfillment_data: fulfillmentData }, product.name, fulfillmentData);
+    return { fulfilled: true, fulfillment_data: fulfillmentData };
   }
 
   if ((tx as any).status === "settlement" && (tx as any).fulfillment_data?.panel_email) {

@@ -37,6 +37,8 @@ type FulfillmentData = {
   memory_text?: string | null;
   disk_text?: string | null;
   cpu_text?: string | null;
+  room_id?: string | null;
+  status_note?: string | null;
 };
 
 type WaitingPaymentClientProps = {
@@ -66,6 +68,7 @@ export function WaitingPaymentClient({ transaction, initialAccountData }: Waitin
   const [openingSnap, setOpeningSnap] = useState(false);
 
   const isPanel = transaction.service_type === "pterodactyl";
+  const isChatService = ["design", "service", "live_chat", "custom"].includes(transaction.service_type);
   const isQrisOnly = transaction.payment_method === "qris";
   const paymentQrUrl = useMemo(
     () =>
@@ -191,7 +194,9 @@ export function WaitingPaymentClient({ transaction, initialAccountData }: Waitin
           <p className="mt-3 text-sm text-slate-300">
             {isPanel
               ? "Setelah pembayaran terverifikasi, panel bot WA akan dibuat otomatis dan detail login akan muncul di halaman ini tanpa perlu refresh manual."
-              : "Setelah webhook Midtrans mengonfirmasi settlement, halaman ini akan otomatis menampilkan credential tanpa refresh."}
+              : isChatService
+                ? "Begitu pembayaran settlement, sistem akan otomatis mengirim bukti pembayaran ke admin dan mengaktifkan room live chat untuk briefing lanjutan."
+                : "Setelah webhook Midtrans mengonfirmasi settlement, halaman ini akan otomatis menampilkan credential tanpa refresh."}
           </p>
         </div>
 
@@ -253,6 +258,28 @@ export function WaitingPaymentClient({ transaction, initialAccountData }: Waitin
               </Button>
               <a href={`/api/invoice/${transaction.order_id}`} target="_blank" rel="noreferrer">
                 <Button>
+                  <Download className="mr-2 h-4 w-4" />
+                  Download Invoice PDF
+                </Button>
+              </a>
+            </div>
+          </div>
+        )}
+
+
+        {isChatService && status === "settlement" && fulfillmentData?.room_id && (
+          <div className="rounded-3xl border border-emerald-500/30 bg-emerald-500/10 p-5">
+            <div className="mb-3 flex items-center gap-2 text-emerald-300">
+              <MessageCircleMore className="h-5 w-5" />
+              <span className="font-semibold">Pembayaran berhasil, room live chat aktif</span>
+            </div>
+            <div className="text-sm leading-7 text-slate-200">{fulfillmentData.status_note || "Admin sudah menerima bukti pembayaran otomatis dari sistem."}</div>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <a href={`/chat/${fulfillmentData.room_id}`}>
+                <Button>Buka room live chat</Button>
+              </a>
+              <a href={`/api/invoice/${transaction.order_id}`} target="_blank" rel="noreferrer">
+                <Button variant="secondary">
                   <Download className="mr-2 h-4 w-4" />
                   Download Invoice PDF
                 </Button>

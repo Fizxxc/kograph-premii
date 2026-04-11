@@ -77,7 +77,8 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
       : null;
 
   const isPanel = (product.service_type || "credential") === "pterodactyl";
-  const stockBadgeText = isPanel ? "Auto Ready 24/7" : product.stock > 0 ? `Stock ${product.stock}` : "Sold Out";
+  const isChatService = ["design", "service", "live_chat", "custom"].includes(product.service_type || "") || Boolean(product.live_chat_enabled);
+  const stockBadgeText = isPanel ? "Auto Ready 24/7" : isChatService ? "Jasa by request" : product.stock > 0 ? `Stock ${product.stock}` : "Sold Out";
   const panelRange = getPanelPresetPriceRange();
 
 

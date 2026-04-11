@@ -3,6 +3,7 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createMidtransQrisTransaction, createMidtransSnapTransaction } from "@/lib/midtrans";
 import { fulfillProductOrder } from "@/lib/fulfillment";
 import { getDefaultWhatsappBotEnvironment, getPanelPresetByKey } from "@/lib/panel-packages";
+import { isChatBasedService, isPanelService } from "@/lib/service-types";
 
 function calculateDiscount(input: {
   type: "fixed" | "percentage";
@@ -74,18 +75,20 @@ export async function createTelegramProductOrder(input: {
   const admin = createAdminSupabaseClient();
   const { data: product } = await admin
     .from("products")
-    .select("id, name, price, stock, service_type, pterodactyl_config")
+    .select("id, name, price, stock, service_type, pterodactyl_config, live_chat_enabled")
     .eq("id", input.productId)
     .single();
 
   if (!product) throw new Error("Produk tidak ditemukan.");
 
-  const isPanel = (product.service_type || "credential") === "pterodactyl";
+  const isPanel = isPanelService(product.service_type);
+  const isChatService = isChatBasedService(product.service_type) || Boolean((product as any).live_chat_enabled);
+  const needsStock = !isPanel && !isChatService;
   const panelPlan = isPanel ? getPanelPresetByKey(input.panelPlanKey) : null;
 
-  if (!isPanel && Number(product.stock || 0) <= 0) throw new Error("Stok produk sedang habis.");
+  if (needsStock && Number(product.stock || 0) <= 0) throw new Error("Stok produk sedang habis.");
 
-  if (!isPanel) {
+  if (needsStock) {
     const { count } = await admin
       .from("app_credentials")
       .select("*", { count: "exact", head: true })
@@ -170,7 +173,13 @@ export async function createTelegramProductOrder(input: {
           plan_price: panelPlan?.price,
           product_mode: "single-panel-multi-option"
         }
-      : null
+      : isChatService
+        ? {
+            type: "chat_service_pending",
+            requested_from: "telegram",
+            live_chat_enabled: Boolean((product as any).live_chat_enabled)
+          }
+        : null
   };
 
   if (paymentMethod === "balance") {

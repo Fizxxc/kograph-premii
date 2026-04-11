@@ -28,6 +28,7 @@ type CheckoutProduct = {
   stock: number;
   service_type?: string | null;
   sold_count?: number | null;
+  live_chat_enabled?: boolean | null;
 };
 
 export function CheckoutCard({
@@ -40,7 +41,9 @@ export function CheckoutCard({
   userBalance?: number;
 }) {
   const router = useRouter();
-  const isPanel = (product.service_type || "credential") === "pterodactyl";
+  const serviceType = product.service_type || "credential";
+  const isPanel = serviceType === "pterodactyl";
+  const isChatService = ["design", "service", "live_chat", "custom"].includes(serviceType) || Boolean(product.live_chat_enabled);
 
   const [stock, setStock] = useState(product.stock);
   const [couponCode, setCouponCode] = useState("");
@@ -54,6 +57,7 @@ export function CheckoutCard({
 
   const stockLabel = useMemo(() => {
     if (isPanel) return "Auto Ready 24/7 • panel bot WA dibuat otomatis setelah pembayaran berhasil";
+    if (isChatService) return "Jasa tanpa stok • setelah bayar admin langsung menerima bukti pembayaran otomatis";
     if (stock <= 0) return "Stok habis";
     if (stock <= 5) return `Sisa ${stock} item`;
     return `Stok tersedia: ${stock}`;
@@ -138,7 +142,7 @@ export function CheckoutCard({
 
   const buttonDisabled =
     loading ||
-    (!isPanel && stock <= 0) ||
+    (!isPanel && !isChatService && stock <= 0) ||
     (paymentMethod === "balance" && userBalance < checkoutPrice);
 
   return (
@@ -171,6 +175,11 @@ export function CheckoutCard({
             <div className="flex items-center gap-2">
               <ServerCog className="h-4 w-4 text-brand-300" />
               Satu produk panel dengan banyak pilihan spesifikasi khusus bot WhatsApp
+            </div>
+          ) : isChatService ? (
+            <div className="flex items-center gap-2">
+              <Bot className="h-4 w-4 text-brand-300" />
+              Jasa dikelola lewat live chat, bukti bayar otomatis masuk ke admin
             </div>
           ) : (
             <div className="flex items-center gap-2">

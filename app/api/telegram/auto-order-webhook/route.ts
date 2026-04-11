@@ -130,6 +130,11 @@ function isTelegramAdmin(chatId: number) {
   return raw.split(",").map((item) => item.trim()).filter(Boolean).includes(String(chatId));
 }
 
+function extractRoomIdFromText(text?: string | null) {
+  const match = String(text || "").match(/#ROOM:([a-f0-9-]{8,})/i);
+  return match?.[1] || null;
+}
+
 async function showHome(chatId: number, messageId?: number) {
   const text = [
     `🤖 <b>@${SITE.autoOrderBotUsername}</b> siap membantu auto order.`,
@@ -254,6 +259,26 @@ export async function POST(request: Request) {
         first_name: message.from.first_name ?? null,
         last_name: message.from.last_name ?? null
       });
+
+      const adminReplyRoomId = isTelegramAdmin(chatId)
+        ? extractRoomIdFromText(message.reply_to_message?.text || message.reply_to_message?.caption)
+        : null;
+      const adminReplyText = String(message.text || message.caption || "").trim();
+      if (adminReplyRoomId && adminReplyText && !adminReplyText.startsWith("/")) {
+        const admin = createAdminSupabaseClient();
+        const { data: room } = await admin.from("live_chat_rooms").select("id, customer_user_id").eq("id", adminReplyRoomId).maybeSingle();
+        if (room) {
+          await admin.from("live_chat_messages").insert({
+            room_id: adminReplyRoomId,
+            sender_user_id: null,
+            sender_role: "admin",
+            message: adminReplyText
+          });
+          await admin.from("live_chat_rooms").update({ last_message_at: new Date().toISOString() }).eq("id", adminReplyRoomId);
+          await sendTelegramMessage(chatId, `✅ Balasan berhasil dikirim ke room <code>${adminReplyRoomId}</code>.`, { bot: "auto" }).catch(() => null);
+          return NextResponse.json({ ok: true });
+        }
+      }
 
       if (text.startsWith("/daftar")) {
         const registered = await ensureTelegramCustomerProfile({

@@ -2,10 +2,11 @@ import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-import { createMidtransQrisTransaction, midtransSnap } from "@/lib/midtrans";
+import { createMidtransQrisTransaction, createMidtransSnapTransaction } from "@/lib/midtrans";
 import { fulfillProductOrder } from "@/lib/fulfillment";
 import { preparePterodactylServerConfig } from "@/lib/pterodactyl";
 import { getDefaultWhatsappBotEnvironment, getPanelPresetByKey } from "@/lib/panel-packages";
+import { isChatBasedService, isPanelService } from "@/lib/service-types";
 
 function calculateDiscount(input: {
   type: "fixed" | "percentage";
@@ -35,6 +36,7 @@ export async function POST(request: Request) {
     const paymentMethod = String(body.paymentMethod ?? "midtrans").trim().toLowerCase();
     const panelUsername = String(body.panelUsername ?? "").trim();
     const panelPlanKey = String(body.panelPlanKey ?? "1gb").trim().toLowerCase();
+    const roomId = String(body.roomId ?? "").trim() || null;
 
     if (!productId) {
       return NextResponse.json({ error: "productId wajib diisi" }, { status: 400 });
@@ -42,7 +44,7 @@ export async function POST(request: Request) {
 
     const { data: product } = await admin
       .from("products")
-      .select("id, name, price, stock, service_type, is_active, pterodactyl_config")
+      .select("id, name, price, stock, service_type, is_active, pterodactyl_config, live_chat_enabled, support_admin_ids")
       .eq("id", productId)
       .single();
 
@@ -50,14 +52,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Produk tidak ditemukan" }, { status: 404 });
     }
 
-    const isPanel = ((product as { service_type?: string | null }).service_type || "credential") === "pterodactyl";
+    const serviceType = (product as { service_type?: string | null }).service_type;
+    const isPanel = isPanelService(serviceType);
+    const isChatService = isChatBasedService(serviceType) || Boolean((product as any).live_chat_enabled);
+    const needsStock = !isPanel && !isChatService;
     const panelPlan = isPanel ? getPanelPresetByKey(panelPlanKey) : null;
 
-    if (!isPanel && Number((product as { stock?: number }).stock || 0) <= 0) {
+    if (needsStock && Number((product as { stock?: number }).stock || 0) <= 0) {
       return NextResponse.json({ error: "Stok produk sedang habis" }, { status: 400 });
     }
 
-    if (!isPanel) {
+    if (needsStock) {
       const { count: availableCredentialCount } = await admin
         .from("app_credentials")
         .select("*", { count: "exact", head: true })
@@ -105,9 +110,7 @@ export async function POST(request: Request) {
     if (couponCode) {
       const { data: coupon } = await admin
         .from("coupons")
-        .select(
-          "id, code, type, value, min_purchase, max_discount, quota, used_count, is_active, starts_at, ends_at"
-        )
+        .select("id, code, type, value, min_purchase, max_discount, quota, used_count, is_active, starts_at, ends_at")
         .eq("code", couponCode)
         .single();
 
@@ -137,6 +140,8 @@ export async function POST(request: Request) {
     const finalAmount = Math.max(0, amount - discountAmount);
     const orderId = `KGP-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
     const statusToken = crypto.randomBytes(8).toString("hex").toUpperCase();
+    const appUrl = String(process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/$/, "");
+    const waitingUrl = appUrl ? `${appUrl}/waiting-payment/${orderId}` : `/waiting-payment/${orderId}`;
 
     const baseTransactionPayload = {
       order_id: orderId,
@@ -150,23 +155,33 @@ export async function POST(request: Request) {
       status_token: statusToken,
       payment_method: paymentMethod,
       telegram_id: (profile as { telegram_id?: string | null } | null)?.telegram_id || null,
-      fulfillment_data: isPanel
-        ? {
-            type: "pterodactyl_pending",
-            requested_username: panelUsername,
-            requested_from: "web",
-            panel_plan_key: panelPlan?.key,
-            panel_plan_label: panelPlan?.label,
-            memory: panelPlan?.memoryMb,
-            disk: panelPlan?.diskMb,
-            cpu: panelPlan?.cpuPercent,
-            disk_text: panelPlan?.diskMb === 0 ? "Unlimited" : `${Math.max(1, Math.round((panelPlan?.diskMb || 0) / 1024))}GB`,
-            memory_text: panelPlan?.memoryMb === 0 ? "Unlimited" : `${Math.round((panelPlan?.memoryMb || 0) / 1024)}GB`,
-            cpu_text: panelPlan?.cpuPercent === 0 ? "Unlimited" : `${panelPlan?.cpuPercent}%`,
-            plan_price: panelPlan?.price,
-            product_mode: "single-panel-multi-option"
-          }
-        : null
+      fulfillment_data: {
+        ...(isPanel
+          ? {
+              type: "pterodactyl_pending",
+              requested_username: panelUsername,
+              requested_from: roomId ? "live-chat" : "web",
+              panel_plan_key: panelPlan?.key,
+              panel_plan_label: panelPlan?.label,
+              memory: panelPlan?.memoryMb,
+              disk: panelPlan?.diskMb,
+              cpu: panelPlan?.cpuPercent,
+              disk_text: panelPlan?.diskMb === 0 ? "Unlimited" : `${Math.max(1, Math.round((panelPlan?.diskMb || 0) / 1024))}GB`,
+              memory_text: panelPlan?.memoryMb === 0 ? "Unlimited" : `${Math.round((panelPlan?.memoryMb || 0) / 1024)}GB`,
+              cpu_text: panelPlan?.cpuPercent === 0 ? "Unlimited" : `${panelPlan?.cpuPercent}%`,
+              plan_price: panelPlan?.price,
+              product_mode: "single-panel-multi-option"
+            }
+          : {}),
+        ...(isChatService
+          ? {
+              type: "chat_service_pending",
+              requested_from: roomId ? "live-chat" : "web",
+              room_id: roomId,
+              live_chat_enabled: Boolean((product as any).live_chat_enabled)
+            }
+          : {})
+      }
     };
 
     if (paymentMethod === "balance") {
@@ -194,23 +209,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, orderId, redirectTo: `/waiting-payment/${orderId}` });
     }
 
-    const itemName = isPanel && panelPlan ? `${String((product as { name: string }).name).slice(0, 34)} ${panelPlan.label}` : String((product as { name: string }).name).slice(0, 50);
+    const itemName = isPanel && panelPlan
+      ? `${String((product as { name: string }).name).slice(0, 34)} ${panelPlan.label}`
+      : `🛒 ${String((product as { name: string }).name).slice(0, 46)}`;
 
     if (paymentMethod === "qris") {
-      const appUrl = String(process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/$/, "");
-      const waitingUrl = appUrl ? `${appUrl}/waiting-payment/${orderId}` : `/waiting-payment/${orderId}`;
-
       const qris = await createMidtransQrisTransaction({
         orderId,
         amount: finalAmount,
-        itemDetails: [
-          {
-            id: (product as { id: string }).id,
-            price: finalAmount,
-            quantity: 1,
-            name: itemName
-          }
-        ],
+        itemDetails: [{
+          id: (product as { id: string }).id,
+          price: finalAmount,
+          quantity: 1,
+          name: itemName
+        }],
         customerDetails: {
           first_name: (profile as { full_name?: string | null } | null)?.full_name || user.email?.split("@")[0] || "Customer",
           email: user.email || undefined
@@ -241,37 +253,31 @@ export async function POST(request: Request) {
       });
     }
 
-    const snapPayload = {
-      transaction_details: {
-        order_id: orderId,
-        gross_amount: finalAmount
-      },
-      enabled_payments: ["qris", "gopay", "shopeepay", "bca_va", "bni_va", "permata_va"],
-      item_details: [
-        {
-          id: (product as { id: string }).id,
-          price: finalAmount,
-          quantity: 1,
-          name: itemName
-        }
-      ],
-      customer_details: {
+    const snap = await createMidtransSnapTransaction({
+      orderId,
+      amount: finalAmount,
+      itemDetails: [{
+        id: (product as { id: string }).id,
+        price: finalAmount,
+        quantity: 1,
+        name: itemName.slice(0, 50)
+      }],
+      customerDetails: {
         first_name: (profile as { full_name?: string | null } | null)?.full_name || user.email?.split("@")[0] || "Customer",
         email: user.email || undefined
-      }
-    };
-
-    const snapResponse = await midtransSnap.createTransaction(snapPayload as never);
+      },
+      enabledPayments: ["qris", "gopay", "shopeepay", "bca_va", "bni_va", "permata_va"]
+    });
 
     const { error: insertError } = await admin.from("transactions").insert({
       ...baseTransactionPayload,
-      snap_token: snapResponse.token,
-      fulfillment_data: isPanel
-        ? {
-            ...(baseTransactionPayload.fulfillment_data || {}),
-            payment_redirect_url: snapResponse.redirect_url || null
-          }
-        : null
+      snap_token: snap.token,
+      fulfillment_data: {
+        ...(baseTransactionPayload.fulfillment_data || {}),
+        payment_type: "snap",
+        payment_redirect_url: snap.redirectUrl || null,
+        payment_fallback_url: waitingUrl
+      }
     });
 
     if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
@@ -279,8 +285,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       orderId,
-      snapToken: snapResponse.token,
-      snapRedirectUrl: snapResponse.redirect_url,
+      snapToken: snap.token,
+      snapRedirectUrl: snap.redirectUrl,
       redirectUrl: `/waiting-payment/${orderId}`
     });
   } catch (error) {
