@@ -131,3 +131,28 @@ export async function getMidtransTransactionStatus(orderId: string) {
     method: "GET"
   });
 }
+
+
+export async function createMidtransSnapTransaction(input: {
+  orderId: string;
+  amount: number;
+  itemDetails: MidtransItem[];
+  customerDetails?: MidtransCustomer;
+  enabledPayments?: string[];
+}) {
+  const response = await midtransSnap.createTransaction({
+    transaction_details: {
+      order_id: input.orderId,
+      gross_amount: input.amount
+    },
+    enabled_payments: input.enabledPayments || ["qris", "gopay", "shopeepay", "bca_va", "bni_va", "permata_va"],
+    item_details: input.itemDetails,
+    customer_details: input.customerDetails
+  } as never);
+
+  return {
+    token: String((response as any).token || ""),
+    redirectUrl: String((response as any).redirect_url || ""),
+    raw: response
+  };
+}

@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { Bot, ServerCog, ShieldCheck, Star } from "lucide-react";
 import { CheckoutCard } from "@/components/checkout-card";
+import { LiveChatLauncher } from "@/components/live-chat/live-chat-launcher";
 import { ReviewForm } from "@/components/reviews/review-form";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -118,6 +119,8 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
                 </div>
               </div>
             )}
+
+{product.live_chat_enabled && <LiveChatLauncher productId={product.id} />}
 
             <div className="grid gap-3 md:grid-cols-2">
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-300">

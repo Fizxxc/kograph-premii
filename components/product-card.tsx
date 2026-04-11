@@ -18,6 +18,7 @@ type Product = {
   featured?: boolean;
   sold_count?: number;
   service_type?: string | null;
+  live_chat_enabled?: boolean;
 };
 
 export function ProductCard({ product }: { product: Product }) {
@@ -46,6 +47,7 @@ export function ProductCard({ product }: { product: Product }) {
               <Badge className="text-brand-200">{isPanel ? "Panel Bot WA" : "Akun / Credential"}</Badge>
               <Badge className="text-slate-300">Terjual {product.sold_count || 0}</Badge>
               {isPanel && <Badge className="text-amber-300">1 produk • banyak pilihan paket</Badge>}
+              {product.live_chat_enabled && <Badge className="text-emerald-300">Live chat</Badge>}
             </div>
 
             <div>

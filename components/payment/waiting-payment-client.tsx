@@ -184,10 +184,10 @@ export function WaitingPaymentClient({ transaction, initialAccountData }: Waitin
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
-      <Card className="space-y-6">
+      <Card className="space-y-6 overflow-hidden">
         <div>
           <div className="text-sm uppercase tracking-[0.2em] text-slate-400">Waiting Payment</div>
-          <h1 className="mt-2 text-3xl font-bold text-white">{transaction.product_name}</h1>
+          <h1 className="mt-2 break-words text-3xl font-bold text-white">{transaction.product_name}</h1>
           <p className="mt-3 text-sm text-slate-300">
             {isPanel
               ? "Setelah pembayaran terverifikasi, panel bot WA akan dibuat otomatis dan detail login akan muncul di halaman ini tanpa perlu refresh manual."
@@ -195,7 +195,7 @@ export function WaitingPaymentClient({ transaction, initialAccountData }: Waitin
           </p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2 [&>*]:min-w-0">
           <InfoBox label="Order ID" value={transaction.order_id} />
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Status</div>
@@ -267,7 +267,7 @@ export function WaitingPaymentClient({ transaction, initialAccountData }: Waitin
               <ServerCog className="h-5 w-5" />
               <span className="font-semibold">Panel berhasil dibuat otomatis</span>
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-2 [&>*]:min-w-0">
               <InfoBox label="Paket" value={fulfillmentData.panel_plan_label || "-"} />
               <InfoBox label="Panel URL" value={fulfillmentData.panel_url || "-"} />
               <InfoBox label="Username Login" value={fulfillmentData.panel_username || "-"} />
@@ -359,10 +359,12 @@ export function WaitingPaymentClient({ transaction, initialAccountData }: Waitin
 }
 
 function InfoBox({ label, value }: { label: string; value: string }) {
+  const shouldBreakAll = /(url|uuid|token|order id|email|username|password)/i.test(label);
+
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+    <div className="min-w-0 rounded-2xl border border-white/10 bg-white/5 p-4">
       <div className="text-xs uppercase tracking-[0.2em] text-slate-400">{label}</div>
-      <div className="mt-2 text-sm font-semibold text-white break-words">{value}</div>
+      <div className={`mt-2 text-sm font-semibold text-white ${shouldBreakAll ? "break-all" : "break-words"}`}>{value}</div>
     </div>
   );
 }

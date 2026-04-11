@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-import { midtransSnap } from "@/lib/midtrans";
+import { createMidtransQrisTransaction, midtransSnap } from "@/lib/midtrans";
 import { fulfillProductOrder } from "@/lib/fulfillment";
 import { preparePterodactylServerConfig } from "@/lib/pterodactyl";
 import { getDefaultWhatsappBotEnvironment, getPanelPresetByKey } from "@/lib/panel-packages";
@@ -195,6 +195,51 @@ export async function POST(request: Request) {
     }
 
     const itemName = isPanel && panelPlan ? `${String((product as { name: string }).name).slice(0, 34)} ${panelPlan.label}` : String((product as { name: string }).name).slice(0, 50);
+
+    if (paymentMethod === "qris") {
+      const appUrl = String(process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/$/, "");
+      const waitingUrl = appUrl ? `${appUrl}/waiting-payment/${orderId}` : `/waiting-payment/${orderId}`;
+
+      const qris = await createMidtransQrisTransaction({
+        orderId,
+        amount: finalAmount,
+        itemDetails: [
+          {
+            id: (product as { id: string }).id,
+            price: finalAmount,
+            quantity: 1,
+            name: itemName
+          }
+        ],
+        customerDetails: {
+          first_name: (profile as { full_name?: string | null } | null)?.full_name || user.email?.split("@")[0] || "Customer",
+          email: user.email || undefined
+        }
+      });
+
+      const { error: insertError } = await admin.from("transactions").insert({
+        ...baseTransactionPayload,
+        payment_method: "qris",
+        snap_token: qris.transactionId || qris.qrUrl || "QRIS_PENDING",
+        fulfillment_data: {
+          ...(baseTransactionPayload.fulfillment_data || {}),
+          payment_type: "qris",
+          payment_qr_url: qris.qrUrl || null,
+          payment_actions: qris.actions || null,
+          payment_fallback_url: waitingUrl
+        }
+      });
+
+      if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
+
+      return NextResponse.json({
+        success: true,
+        orderId,
+        redirectUrl: `/waiting-payment/${orderId}`,
+        paymentMethod: "qris",
+        paymentQrUrl: qris.qrUrl || null
+      });
+    }
 
     const snapPayload = {
       transaction_details: {

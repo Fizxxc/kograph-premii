@@ -56,7 +56,10 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       featured: formData.get("featured") ? true : false,
       service_type: serviceType,
       is_active: String(formData.get("is_active") ?? "true") !== "false",
-      pterodactyl_config: parsePterodactylConfig(formData.get("pterodactyl_config"))
+      pterodactyl_config: parsePterodactylConfig(formData.get("pterodactyl_config")),
+      live_chat_enabled: formData.get("live_chat_enabled") != null,
+      support_admin_ids: String(formData.get("support_admin_ids") ?? "").split(",").map((x) => x.trim()).filter(Boolean),
+      external_link: String(formData.get("external_link") ?? "").trim() || null
     };
 
     if (
@@ -80,7 +83,10 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       featured: payload.featured,
       service_type: payload.service_type,
       is_active: payload.is_active,
-      pterodactyl_config: payload.pterodactyl_config
+      pterodactyl_config: payload.pterodactyl_config,
+      live_chat_enabled: payload.live_chat_enabled,
+      support_admin_ids: payload.support_admin_ids,
+      external_link: payload.external_link
     };
 
     if (payload.image_url) updatePayload.image_url = payload.image_url;

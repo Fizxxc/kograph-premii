@@ -29,6 +29,7 @@ export async function Header() {
   const desktopLinks = [
     { href: "/", label: "Home" },
     { href: "/panel", label: "Panel" },
+    { href: "/services", label: "Jasa Edit" },
     { href: "/orders", label: "Orders" },
     ...(user ? [{ href: "/profile", label: "Profile" }] : []),
     { href: `https://t.me/${SITE.botUsername}`, label: "Bot Cek", external: true },
@@ -39,6 +40,7 @@ export async function Header() {
   const mobileLinks = [
     { href: "/", label: "Home", icon: ShoppingBag },
     { href: "/panel", label: "Panel", icon: ServerCog },
+    { href: "/services", label: "Jasa Edit", icon: ServerCog },
     { href: "/orders", label: "Orders", icon: ShoppingBag },
     ...(user ? [{ href: "/profile", label: "Profile", icon: UserRound }] : []),
     { href: `https://t.me/${SITE.botUsername}`, label: "Bot Cek", icon: Bot, external: true },

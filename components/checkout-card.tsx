@@ -45,7 +45,7 @@ export function CheckoutCard({
   const [stock, setStock] = useState(product.stock);
   const [couponCode, setCouponCode] = useState("");
   const [loading, setLoading] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<"midtrans" | "balance">("midtrans");
+  const [paymentMethod, setPaymentMethod] = useState<"midtrans" | "qris" | "balance">("qris");
   const [panelUsername, setPanelUsername] = useState("");
   const [panelPlanKey, setPanelPlanKey] = useState(PANEL_RAM_PRESETS[0].key);
 
@@ -249,7 +249,19 @@ export function CheckoutCard({
 
         <div className="space-y-2">
           <div className="text-sm text-slate-300">Pilih pembayaran</div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <button
+              type="button"
+              onClick={() => setPaymentMethod("qris")}
+              className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
+                paymentMethod === "qris"
+                  ? "border-brand-400 bg-brand-500/10 text-white"
+                  : "border-white/10 bg-white/5 text-slate-300"
+              }`}
+            >
+              <div className="font-semibold">QRIS</div>
+              <div className="mt-1 text-xs text-slate-400">QRIS dinamis, langsung tampil</div>
+            </button>
             <button
               type="button"
               onClick={() => setPaymentMethod("midtrans")}
@@ -260,7 +272,7 @@ export function CheckoutCard({
               }`}
             >
               <div className="font-semibold">Midtrans</div>
-              <div className="mt-1 text-xs text-slate-400">QRIS, e-wallet, virtual account</div>
+              <div className="mt-1 text-xs text-slate-400">GoPay, ShopeePay, virtual account</div>
             </button>
             <button
               type="button"
@@ -288,6 +300,8 @@ export function CheckoutCard({
             </>
           ) : paymentMethod === "balance" ? (
             "Bayar dengan Saldo"
+          ) : paymentMethod === "qris" ? (
+            isPanel ? "Bayar QRIS & Buat Panel" : "Bayar dengan QRIS"
           ) : isPanel ? (
             "Buat Panel WA Sekarang"
           ) : stock <= 0 ? (

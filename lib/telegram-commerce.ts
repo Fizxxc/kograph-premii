@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-import { createMidtransQrisTransaction } from "@/lib/midtrans";
+import { createMidtransQrisTransaction, createMidtransSnapTransaction } from "@/lib/midtrans";
 import { fulfillProductOrder } from "@/lib/fulfillment";
 import { getDefaultWhatsappBotEnvironment, getPanelPresetByKey } from "@/lib/panel-packages";
 
@@ -10,10 +10,7 @@ function calculateDiscount(input: {
   baseAmount: number;
   maxDiscount: number | null;
 }) {
-  let discount =
-    input.type === "fixed"
-      ? input.value
-      : Math.floor((input.baseAmount * input.value) / 100);
+  let discount = input.type === "fixed" ? input.value : Math.floor((input.baseAmount * input.value) / 100);
   if (input.maxDiscount && discount > input.maxDiscount) discount = input.maxDiscount;
   return Math.max(0, Math.min(discount, input.baseAmount));
 }
@@ -28,12 +25,50 @@ export async function getProfileByTelegramId(telegramId: string) {
   return data;
 }
 
+export async function ensureTelegramCustomerProfile(input: {
+  telegramId: string;
+  username?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+}) {
+  const admin = createAdminSupabaseClient();
+  const existing = await getProfileByTelegramId(input.telegramId);
+  if (existing) return { ...existing, created: false };
+
+  const email = `telegram-${input.telegramId}@tg.kograph.local`;
+  const password = `Tg#${crypto.randomBytes(12).toString("base64url")}`;
+  const fullName = [input.firstName, input.lastName].filter(Boolean).join(" ") || input.username || `Telegram ${input.telegramId}`;
+
+  const { data: createdUser, error: createError } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: {
+      full_name: fullName,
+      telegram_id: input.telegramId,
+      created_from: "telegram-bot"
+    }
+  });
+  if (createError) throw new Error(createError.message);
+
+  const { error: profileError } = await admin
+    .from("profiles")
+    .update({ full_name: fullName, telegram_id: input.telegramId })
+    .eq("id", createdUser.user.id);
+  if (profileError) throw new Error(profileError.message);
+
+  const profile = await getProfileByTelegramId(input.telegramId);
+  if (!profile) throw new Error("Gagal membuat profil Telegram.");
+
+  return { ...profile, created: true, email, tempPassword: password };
+}
+
 export async function createTelegramProductOrder(input: {
   userId: string;
   telegramId: string;
   productId: string;
   couponCode?: string;
-  paymentMethod?: "midtrans" | "balance";
+  paymentMethod?: "midtrans" | "balance" | "qris";
   panelPlanKey?: string;
 }) {
   const admin = createAdminSupabaseClient();
@@ -82,8 +117,7 @@ export async function createTelegramProductOrder(input: {
     const now = new Date();
     const isStarted = !coupon?.starts_at || new Date(coupon.starts_at) <= now;
     const isNotExpired = !coupon?.ends_at || new Date(coupon.ends_at) >= now;
-    const quotaAvailable =
-      coupon?.quota == null || Number(coupon.used_count || 0) < Number(coupon.quota);
+    const quotaAvailable = coupon?.quota == null || Number(coupon.used_count || 0) < Number(coupon.quota);
 
     if (!coupon || !coupon.is_active || !isStarted || !isNotExpired || !quotaAvailable) {
       throw new Error("Kupon tidak aktif atau sudah berakhir.");
@@ -94,7 +128,7 @@ export async function createTelegramProductOrder(input: {
 
     discountAmount = calculateDiscount({
       type: coupon.type as "fixed" | "percentage",
-      value: Number(coupon.value || 0),
+      value: Number(coupon.value),
       baseAmount: amount,
       maxDiscount: coupon.max_discount ? Number(coupon.max_discount) : null
     });
@@ -102,11 +136,11 @@ export async function createTelegramProductOrder(input: {
   }
 
   const finalAmount = Math.max(0, amount - discountAmount);
-  const orderId = `KGP-TG-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+  const orderId = `KGT-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
   const statusToken = crypto.randomBytes(8).toString("hex").toUpperCase();
-  const paymentMethod = input.paymentMethod || "midtrans";
   const appUrl = String(process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/$/, "");
   const waitingUrl = appUrl ? `${appUrl}/waiting-payment/${orderId}` : `/waiting-payment/${orderId}`;
+  const paymentMethod = input.paymentMethod || "midtrans";
 
   const basePayload = {
     order_id: orderId,
@@ -118,26 +152,20 @@ export async function createTelegramProductOrder(input: {
     coupon_code: appliedCouponCode,
     status: "pending",
     status_token: statusToken,
-    payment_method: paymentMethod === "balance" ? "balance" : "qris",
+    payment_method: paymentMethod,
     telegram_id: input.telegramId,
     fulfillment_data: isPanel
       ? {
           type: "pterodactyl_pending",
-          requested_username: `tg${String(input.telegramId).replace(/\D/g, "")}`.slice(0, 12),
+          requested_username: input.telegramId,
           requested_from: "telegram",
           panel_plan_key: panelPlan?.key,
           panel_plan_label: panelPlan?.label,
           memory: panelPlan?.memoryMb,
           disk: panelPlan?.diskMb,
           cpu: panelPlan?.cpuPercent,
-          memory_text:
-            panelPlan?.memoryMb === 0
-              ? "Unlimited"
-              : `${Math.round((panelPlan?.memoryMb || 0) / 1024)}GB`,
-          disk_text:
-            panelPlan?.diskMb === 0
-              ? "Unlimited"
-              : `${Math.max(1, Math.round((panelPlan?.diskMb || 0) / 1024))}GB`,
+          disk_text: panelPlan?.diskMb === 0 ? "Unlimited" : `${Math.max(1, Math.round((panelPlan?.diskMb || 0) / 1024))}GB`,
+          memory_text: panelPlan?.memoryMb === 0 ? "Unlimited" : `${Math.round((panelPlan?.memoryMb || 0) / 1024)}GB`,
           cpu_text: panelPlan?.cpuPercent === 0 ? "Unlimited" : `${panelPlan?.cpuPercent}%`,
           plan_price: panelPlan?.price,
           product_mode: "single-panel-multi-option"
@@ -146,14 +174,8 @@ export async function createTelegramProductOrder(input: {
   };
 
   if (paymentMethod === "balance") {
-    if (Number(profile?.balance || 0) < finalAmount) {
-      throw new Error("Saldo user tidak mencukupi untuk pembayaran via Telegram.");
-    }
-
-    const { error: insertError } = await admin.from("transactions").insert({
-      ...basePayload,
-      snap_token: "BALANCE_PAYMENT"
-    });
+    if (Number(profile?.balance || 0) < finalAmount) throw new Error("Saldo tidak mencukupi.");
+    const { error: insertError } = await admin.from("transactions").insert({ ...basePayload, snap_token: "BALANCE_PAYMENT" });
     if (insertError) throw new Error(insertError.message);
 
     const { error: walletError } = await admin.rpc("apply_wallet_adjustment", {
@@ -179,55 +201,84 @@ export async function createTelegramProductOrder(input: {
     };
   }
 
-  const qris = await createMidtransQrisTransaction({
+  const itemDetails = [
+    {
+      id: product.id,
+      price: finalAmount,
+      quantity: 1,
+      name: `${String(product.name).slice(0, 34)}${panelPlan ? ` ${panelPlan.label}` : ""}`.slice(0, 50)
+    }
+  ];
+  const customerDetails = {
+    first_name: profile?.full_name || `user_${input.telegramId}`,
+    email: `telegram-${input.userId}@local.kograph`
+  };
+
+  if (paymentMethod === "qris") {
+    const qris = await createMidtransQrisTransaction({ orderId, amount: finalAmount, itemDetails, customerDetails });
+    const { error: insertError } = await admin.from("transactions").insert({
+      ...basePayload,
+      payment_method: "qris",
+      snap_token: qris.transactionId || qris.qrUrl || "QRIS_PENDING",
+      fulfillment_data: {
+        ...(basePayload.fulfillment_data || {}),
+        payment_type: "qris",
+        payment_qr_url: qris.qrUrl || null,
+        payment_actions: qris.actions || null,
+        payment_fallback_url: waitingUrl,
+        whatsapp_environment: getDefaultWhatsappBotEnvironment((product as any).pterodactyl_config?.environment || {})
+      }
+    });
+    if (insertError) throw new Error(insertError.message);
+
+    return {
+      orderId,
+      paymentUrl: qris.qrUrl,
+      paymentQrUrl: qris.qrUrl,
+      snapUrl: qris.qrUrl,
+      waitingUrl,
+      finalAmount,
+      statusToken,
+      paymentMethod: "qris",
+      redirectPath: `/waiting-payment/${orderId}`
+    };
+  }
+
+  const snap = await createMidtransSnapTransaction({
     orderId,
     amount: finalAmount,
-    itemDetails: [
-      {
-        id: product.id,
-        price: finalAmount,
-        quantity: 1,
-        name: `${String(product.name).slice(0, 34)}${panelPlan ? ` ${panelPlan.label}` : ""}`.slice(0, 50)
-      }
-    ],
-    customerDetails: {
-      first_name: profile?.full_name || `user_${input.telegramId}`,
-      email: `telegram-${input.userId}@local.kograph`
-    }
+    itemDetails,
+    customerDetails,
+    enabledPayments: ["qris", "gopay", "shopeepay", "bca_va", "bni_va", "permata_va"]
   });
 
   const { error: insertError } = await admin.from("transactions").insert({
     ...basePayload,
-    snap_token: qris.transactionId || qris.qrUrl || "QRIS_PENDING",
+    payment_method: "midtrans",
+    snap_token: snap.token || "SNAP_PENDING",
     fulfillment_data: {
       ...(basePayload.fulfillment_data || {}),
-      payment_type: "qris",
-      payment_qr_url: qris.qrUrl || null,
-      payment_actions: qris.actions || null,
-      payment_fallback_url: waitingUrl,
-      whatsapp_environment: getDefaultWhatsappBotEnvironment((product as any).pterodactyl_config?.environment || {})
+      payment_type: "snap",
+      payment_redirect_url: snap.redirectUrl || waitingUrl,
+      payment_fallback_url: waitingUrl
     }
   });
   if (insertError) throw new Error(insertError.message);
 
   return {
     orderId,
-    paymentUrl: qris.qrUrl,
-    paymentQrUrl: qris.qrUrl,
-    snapUrl: qris.qrUrl,
+    paymentUrl: snap.redirectUrl,
+    paymentQrUrl: null,
+    snapUrl: snap.redirectUrl,
     waitingUrl,
     finalAmount,
     statusToken,
-    paymentMethod: "qris",
+    paymentMethod: "midtrans",
     redirectPath: `/waiting-payment/${orderId}`
   };
 }
 
-export async function createTelegramTopup(input: {
-  userId: string;
-  amount: number;
-  telegramId?: string | null;
-}) {
+export async function createTelegramTopup(input: { userId: string; amount: number; telegramId?: string | null }) {
   const admin = createAdminSupabaseClient();
   if (!Number.isFinite(input.amount) || input.amount < 10000) throw new Error("Minimal top up Rp10.000.");
 
@@ -236,7 +287,7 @@ export async function createTelegramTopup(input: {
   const appUrl = String(process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/$/, "");
   const waitingUrl = appUrl ? `${appUrl}/profile` : "/profile";
 
-  const qris = await createMidtransQrisTransaction({
+  const snap = await createMidtransSnapTransaction({
     orderId,
     amount: input.amount,
     itemDetails: [{ id: orderId, price: input.amount, quantity: 1, name: "Top Up Saldo Telegram Kograph" }],
@@ -251,18 +302,11 @@ export async function createTelegramTopup(input: {
     user_id: input.userId,
     amount: input.amount,
     status: "pending",
-    snap_token: qris.transactionId || qris.qrUrl || "QRIS_PENDING"
+    snap_token: snap.token || snap.redirectUrl || "SNAP_PENDING"
   });
   if (error) throw new Error(error.message);
 
-  return {
-    orderId,
-    amount: input.amount,
-    paymentUrl: qris.qrUrl,
-    paymentQrUrl: qris.qrUrl,
-    snapUrl: qris.qrUrl,
-    waitingUrl
-  };
+  return { orderId, amount: input.amount, paymentUrl: snap.redirectUrl, paymentQrUrl: null, snapUrl: snap.redirectUrl, waitingUrl };
 }
 
 export async function adjustWalletByTelegramAdmin(input: {
