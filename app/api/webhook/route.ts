@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     if (tx) {
       const updatePayload: Record<string, unknown> = {
         status: normalizedStatus,
-        gateway_reference: String(payload?.transaction_id || payload?.transaction_id ?? "") || null,
+        gateway_reference: payload?.transaction_id ? String(payload.transaction_id) : null,
         gateway_payload: payload
       };
       if (normalizedStatus === "settlement") updatePayload.paid_at = new Date().toISOString();
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     if (topup) {
       const updatePayload: Record<string, unknown> = {
         status: normalizedStatus,
-        gateway_reference: String(payload?.transaction_id || payload?.transaction_id ?? "") || null,
+        gateway_reference: payload?.transaction_id ? String(payload.transaction_id) : null,
         gateway_payload: payload
       };
       if (normalizedStatus === "settlement") updatePayload.paid_at = new Date().toISOString();
