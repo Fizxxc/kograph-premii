@@ -61,6 +61,7 @@ const LordIcon = "lord-icon" as any;
 export default function PaymentStatusClient({ orderId, resi, type = "transaction" }: { orderId: string; resi?: string; type?: string }) {
   const [data, setData] = useState<StatusPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [qrImageSrc, setQrImageSrc] = useState("");
 
@@ -71,9 +72,14 @@ export default function PaymentStatusClient({ orderId, resi, type = "transaction
       if (type) params.set("type", type);
       const response = await fetch(`/api/public-order-status/${orderId}?${params.toString()}`, { cache: "no-store" });
       const json = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(String(json.error || "Status pembayaran belum bisa dimuat."));
+      if (!response.ok) {
+        setData(null);
+        setErrorCode(String(json.code || "PAYMENT_STATUS_ERROR"));
+        throw new Error(String(json.message || json.error || "Status pembayaran belum bisa dimuat."));
+      }
       setData(json);
       setError(null);
+      setErrorCode(null);
     } catch (error: any) {
       setError(error?.message || "Status pembayaran belum bisa dimuat.");
     } finally {
@@ -89,6 +95,8 @@ export default function PaymentStatusClient({ orderId, resi, type = "transaction
 
   const tone = useMemo(() => statusTone(String(data?.status || "pending")), [data?.status]);
   const settled = String(data?.status || "pending") === "settlement";
+  const qrisUnavailable = errorCode === "QRIS_NOT_ACTIVE";
+  const blockingError = Boolean(error && !data && !qrisUnavailable);
   const generatedQrUrl = useMemo(() => buildGeneratedQrUrl(data?.qrString), [data?.qrString]);
 
   useEffect(() => {
@@ -163,6 +171,26 @@ export default function PaymentStatusClient({ orderId, resi, type = "transaction
                         <div>
                           <div className="text-2xl font-black text-slate-950 dark:text-white">Pembayaran telah diterima</div>
                           <p className="mt-2 text-sm leading-7 text-slate-600 dark:text-slate-300">Terima kasih. Transaksi Anda sudah tercatat dan status pesanan akan mengikuti proses layanan secara otomatis.</p>
+                        </div>
+                      </>
+                    ) : qrisUnavailable ? (
+                      <>
+                        <div className="rounded-full bg-rose-100 p-5 dark:bg-rose-400/15">
+                          <div className="flex h-28 w-28 items-center justify-center rounded-full border-4 border-rose-200 text-4xl font-black text-rose-600 dark:border-rose-400/20 dark:text-rose-300">!</div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-black text-slate-950 dark:text-white">QRIS Belum Aktif</div>
+                          <p className="mt-2 text-sm leading-7 text-slate-600 dark:text-slate-300">Sistem belum menerima data QR dari Midtrans untuk transaksi ini. Silakan cek aktivasi QRIS pada akun Midtrans Anda atau buat ulang transaksi setelah QRIS aktif.</p>
+                        </div>
+                      </>
+                    ) : blockingError ? (
+                      <>
+                        <div className="rounded-full bg-red-100 p-5 dark:bg-red-400/15">
+                          <div className="flex h-28 w-28 items-center justify-center rounded-full border-4 border-red-200 text-4xl font-black text-red-600 dark:border-red-400/20 dark:text-red-300">!</div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-black text-slate-950 dark:text-white">Status pembayaran belum tersedia</div>
+                          <p className="mt-2 text-sm leading-7 text-slate-600 dark:text-slate-300">Sistem belum bisa mengambil status pembayaran terbaru. Silakan periksa konfigurasi Midtrans lalu coba refresh kembali.</p>
                         </div>
                       </>
                     ) : (
