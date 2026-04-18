@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -23,6 +24,14 @@ async function ensureAdmin() {
   }
 
   return { admin, user, error: null };
+}
+
+function revalidateCatalog(productId: string) {
+  revalidatePath("/");
+  revalidatePath("/products");
+  revalidatePath("/panel");
+  revalidatePath("/admin");
+  revalidatePath(`/products/${productId}`);
 }
 
 function parsePterodactylConfig(raw: FormDataEntryValue | null) {
@@ -94,6 +103,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     const { error: updateError } = await admin.from("products").update(updatePayload).eq("id", params.id);
     if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
 
+    revalidateCatalog(params.id);
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json(
@@ -111,6 +121,7 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
     const { error: deleteError } = await admin.from("products").delete().eq("id", params.id);
     if (deleteError) return NextResponse.json({ error: deleteError.message }, { status: 500 });
 
+    revalidateCatalog(params.id);
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json(

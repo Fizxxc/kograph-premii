@@ -47,6 +47,8 @@ export async function GET(request: Request, { params }: { params: { orderId: str
       amount: Number((fresh as any)?.amount || 0),
       publicOrderCode: (fresh as any)?.public_order_code,
       qrUrl: String((fresh as any)?.gateway_payload?.actions?.find?.((item: any) => item?.name === "generate-qr-code")?.url || (fresh as any)?.gateway_payload?.qr_url || ""),
+      qrString: String((fresh as any)?.gateway_payload?.qr_string || ""),
+      deeplinkUrl: String((fresh as any)?.gateway_payload?.actions?.find?.((item: any) => item?.name === "deeplink-redirect")?.url || ""),
       raw: fresh
     });
   }
@@ -120,6 +122,8 @@ export async function GET(request: Request, { params }: { params: { orderId: str
     amount: Number((fresh as any)?.final_amount || (fresh as any)?.amount || 0),
     publicOrderCode: (fresh as any)?.public_order_code,
     qrUrl: String((fresh as any)?.fulfillment_data?.payment_qr_url || (fresh as any)?.gateway_payload?.actions?.find?.((item: any) => item?.name === "generate-qr-code")?.url || ""),
+    qrString: String((fresh as any)?.fulfillment_data?.payment_qr_string || (fresh as any)?.gateway_payload?.qr_string || ""),
+    deeplinkUrl: String((fresh as any)?.fulfillment_data?.payment_deeplink_url || (fresh as any)?.gateway_payload?.actions?.find?.((item: any) => item?.name === "deeplink-redirect")?.url || ""),
     productName: String(product?.name || (fresh as any)?.product_snapshot?.product_name || "Produk"),
     productImage: String(product?.image_url || (fresh as any)?.product_snapshot?.product_image_url || ""),
     variantName: String((fresh as any)?.product_snapshot?.variant_name || ""),

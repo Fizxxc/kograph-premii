@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -28,6 +29,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Tidak ada credential valid" }, { status: 400 });
     }
 
+    const { data: product } = await admin
+      .from("products")
+      .select("id, service_type")
+      .eq("id", productId)
+      .maybeSingle();
+
+    if (!product) {
+      return NextResponse.json({ error: "Produk tidak ditemukan" }, { status: 404 });
+    }
+
+    if (product.service_type === "pterodactyl") {
+      return NextResponse.json({ error: "Produk panel auto ready tidak memakai credential manual." }, { status: 400 });
+    }
+
     const payload = validAccounts.map((account) => ({
       product_id: productId,
       account_data: account,
@@ -43,6 +58,12 @@ export async function POST(request: Request) {
     });
 
     if (stockError) return NextResponse.json({ error: stockError.message }, { status: 500 });
+
+    revalidatePath("/");
+    revalidatePath("/products");
+    revalidatePath("/panel");
+    revalidatePath("/admin");
+    revalidatePath(`/products/${productId}`);
 
     return NextResponse.json({ success: true, inserted: validAccounts.length });
   } catch (error) {

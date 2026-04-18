@@ -1,6 +1,9 @@
 import ProductCard from "@/components/product-card";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 
+export const dynamic = "force-dynamic";
+
+
 export default async function ProductsPage() {
   const admin = createAdminSupabaseClient();
   const { data: products } = await admin

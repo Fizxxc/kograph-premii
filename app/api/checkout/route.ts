@@ -187,6 +187,7 @@ export async function POST(request: Request) {
         payment_type: "qris",
         payment_qr_url: qrUrl,
         payment_deeplink_url: deeplinkUrl,
+        payment_fallback_url: deeplinkUrl || qrUrl,
         payment_actions: actions,
         payment_qr_string: qrString,
         qr_expires_in_minutes: 15,

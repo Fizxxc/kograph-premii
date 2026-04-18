@@ -2,6 +2,9 @@ import Link from "next/link";
 import ProductCard from "@/components/product-card";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 
+export const dynamic = "force-dynamic";
+
+
 export default async function HomePage() {
   const admin = createAdminSupabaseClient();
   const { data: products } = await admin
@@ -25,7 +28,7 @@ export default async function HomePage() {
           <div className="grid items-center gap-10 lg:grid-cols-[1.15fr,0.85fr]">
             <div className="space-y-7">
               <div className="inline-flex rounded-full border border-amber-200 bg-amber-50/80 px-4 py-2 text-xs font-black uppercase tracking-[0.28em] text-amber-700 dark:border-amber-300/20 dark:bg-amber-300/10 dark:text-amber-300">
-                Tampilan baru • lebih rapi • lebih nyaman
+                Layanan digital terpercaya
               </div>
 
               <div className="space-y-4">
@@ -33,7 +36,7 @@ export default async function HomePage() {
                   Tempat order digital yang terasa <span className="text-gradient">lebih tenang, lebih jelas, dan lebih profesional</span>.
                 </h1>
                 <p className="max-w-2xl text-base leading-8 text-slate-600 sm:text-lg dark:text-slate-300">
-                  Kami rapikan pengalaman belanja dari awal sampai selesai. Tinggal pilih paket yang cocok, lanjut ke pembayaran, lalu pantau status order dengan alur yang enak dilihat dan mudah dipahami.
+                  Kograph Premium menghadirkan layanan digital dengan alur pemesanan yang rapi, pembayaran yang jelas, dan pemantauan pesanan yang mudah diakses. Dirancang untuk memberi pengalaman yang nyaman sekaligus meyakinkan sejak awal hingga transaksi selesai.
                 </p>
               </div>
 
@@ -48,9 +51,9 @@ export default async function HomePage() {
 
               <div className="grid gap-4 sm:grid-cols-3">
                 {[
-                  ["Pilihan paket rapi", "Varian durasi, harga, atau tipe paket disusun lebih jelas supaya user tidak bingung saat memilih."],
-                  ["Bisa cek dengan resi", "Setelah order dibuat, status pesanan tetap bisa dicek meski tanpa harus login ke akun."],
-                  ["Nyaman di semua device", "Desktop dibuat lebih lega, mobile dibuat lebih ringkas, jadi tampilannya tetap enak dipakai." ]
+                  ["Pilihan terkurasi", "Setiap produk ditampilkan dengan struktur informasi yang jelas agar proses pemilihan terasa lebih mudah dan meyakinkan."],
+                  ["Pembayaran terverifikasi", "QRIS dinamis dan status transaksi dipantau secara otomatis untuk membantu memastikan proses pembayaran berjalan dengan rapi."],
+                  ["Akses pesanan yang praktis", "Status order dapat dipantau kembali menggunakan resi, sehingga informasi penting tetap mudah dijangkau kapan saja." ]
                 ].map(([title, text]) => (
                   <div key={title} className="rounded-[24px] border border-white/70 bg-white/70 p-4 shadow-sm dark:border-white/10 dark:bg-white/5">
                     <div className="text-sm font-black text-slate-950 dark:text-white">{title}</div>
@@ -62,25 +65,25 @@ export default async function HomePage() {
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
               <div className="rounded-[32px] border border-amber-200 bg-amber-300/85 p-6 text-slate-950 shadow-xl shadow-amber-200/30 dark:border-amber-300/20 dark:bg-gradient-to-br dark:from-amber-300 dark:to-yellow-200">
-                <div className="text-xs font-black uppercase tracking-[0.3em] text-amber-900">Cara kerjanya</div>
+                <div className="text-xs font-black uppercase tracking-[0.3em] text-amber-900">Alur layanan</div>
                 <ol className="mt-4 space-y-3 text-sm font-medium leading-7">
-                  <li>1. Pilih produk dan paket yang paling cocok.</li>
-                  <li>2. Lanjut ke pembayaran dari halaman yang lebih fokus.</li>
-                  <li>3. Status order diperbarui otomatis setelah pembayaran terkonfirmasi.</li>
-                  <li>4. Bukti transaksi dan resi bisa dipakai untuk cek progress kapan saja.</li>
+                  <li>1. Pilih produk atau paket sesuai kebutuhan Anda.</li>
+                  <li>2. Lanjutkan ke pembayaran melalui QRIS dinamis yang tersedia.</li>
+                  <li>3. Status transaksi diperbarui otomatis setelah pembayaran terverifikasi.</li>
+                  <li>4. Gunakan resi pesanan untuk memantau progres layanan kapan pun diperlukan.</li>
                 </ol>
               </div>
 
               <div className="rounded-[32px] border border-slate-200 bg-white/80 p-6 shadow-xl shadow-slate-200/30 dark:border-white/10 dark:bg-white/5 dark:shadow-black/20">
-                <div className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500">Yang diperbarui</div>
+                <div className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500">Keunggulan layanan</div>
                 <div className="mt-4 space-y-4">
                   <div className="rounded-[24px] border border-slate-100 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/5">
-                    <div className="text-sm font-black text-slate-950 dark:text-white">Tampilan lebih dewasa</div>
-                    <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Warna, spasi, dan struktur halaman dirapikan supaya kesannya lebih profesional dan mudah dipercaya.</p>
+                    <div className="text-sm font-black text-slate-950 dark:text-white">Presentasi yang profesional</div>
+                    <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Bahasa visual, komposisi, dan struktur halaman disusun untuk memberi kesan yang lebih percaya diri, rapi, dan terpercaya.</p>
                   </div>
                   <div className="rounded-[24px] border border-slate-100 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/5">
-                    <div className="text-sm font-black text-slate-950 dark:text-white">Dark mode & light mode</div>
-                    <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">User bisa pilih tampilan yang paling nyaman dipakai tanpa bikin layout terasa ramai.</p>
+                    <div className="text-sm font-black text-slate-950 dark:text-white">Pengalaman yang nyaman</div>
+                    <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Setiap halaman dibuat responsif dan mudah dibaca, baik saat diakses melalui desktop maupun perangkat mobile.</p>
                   </div>
                 </div>
               </div>
@@ -94,7 +97,7 @@ export default async function HomePage() {
           <div>
             <div className="text-xs font-black uppercase tracking-[0.3em] text-amber-700 dark:text-amber-300">Pilihan populer</div>
             <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950 dark:text-white">Produk yang paling sering dicari</h2>
-            <p className="mt-2 text-sm leading-7 text-slate-600 dark:text-slate-300">Pilih paket yang paling cocok. Kalau ada beberapa opsi durasi atau tipe, semuanya sudah dirapikan supaya lebih mudah dibandingkan.</p>
+            <p className="mt-2 text-sm leading-7 text-slate-600 dark:text-slate-300">Temukan layanan yang paling sesuai dengan kebutuhan Anda melalui katalog yang disusun lebih jelas, ringkas, dan mudah ditelusuri.</p>
           </div>
           <Link href="/products" className="text-sm font-semibold text-slate-700 underline decoration-amber-300 underline-offset-4 transition hover:text-slate-950 dark:text-slate-300 dark:hover:text-white">
             Lihat katalog lengkap

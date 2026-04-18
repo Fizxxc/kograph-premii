@@ -85,7 +85,7 @@ export default function CheckoutCard({ product, variants, user }: CheckoutCardPr
         </div>
         <CardTitle className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">Pilih paket lalu lanjut ke pembayaran</CardTitle>
         <p className="text-sm leading-7 text-slate-600 dark:text-slate-300">
-          Halaman ini dibuat lebih fokus supaya user bisa isi data dengan nyaman, pilih paket dengan jelas, lalu langsung lanjut ke QRIS dinamis tanpa langkah yang membingungkan.
+          Silakan lengkapi data pesanan, pilih paket yang sesuai, lalu lanjutkan ke pembayaran melalui QRIS dinamis dengan proses yang ringkas dan jelas.
         </p>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -109,7 +109,7 @@ export default function CheckoutCard({ product, variants, user }: CheckoutCardPr
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <div className="text-base font-black text-slate-950 dark:text-white">{variant.name}</div>
-                        <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{variant.short_description || variant.duration_label || "Pilihan paket yang bisa diatur ulang admin dari dashboard."}</p>
+                        <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{variant.short_description || variant.duration_label || "Pilihan paket yang tersedia untuk kebutuhan layanan Anda."}</p>
                       </div>
                       <div className="text-right">
                         {variant.compare_at_price ? <div className="text-xs font-semibold text-slate-400 line-through dark:text-slate-500">{formatRupiah(Number(variant.compare_at_price))}</div> : null}
@@ -172,7 +172,7 @@ export default function CheckoutCard({ product, variants, user }: CheckoutCardPr
         <Button onClick={handleCheckout} disabled={loading} className="h-14 w-full rounded-full text-base font-semibold shadow-[0_18px_40px_-24px_rgba(250,204,21,0.65)]">
           {loading ? "Membuat QRIS..." : "Lanjut ke pembayaran"}
         </Button>
-        <p className="text-xs leading-6 text-slate-500 dark:text-slate-400">Pesanan diproses setelah server menerima status pembayaran yang valid. Jadi alurnya lebih aman untuk user dan admin.</p>
+        <p className="text-xs leading-6 text-slate-500 dark:text-slate-400">Pesanan akan diproses setelah sistem menerima konfirmasi pembayaran yang valid agar setiap transaksi tercatat dengan lebih rapi dan aman.</p>
       </CardContent>
     </Card>
   );

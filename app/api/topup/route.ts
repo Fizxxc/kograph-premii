@@ -53,6 +53,7 @@ export async function POST(request: Request) {
       redirectUrl: `/waiting-payment/${orderId}?resi=${encodeURIComponent(publicOrderCode)}&type=topup`,
       paymentMethod: "qris",
       paymentQrUrl: qris.qrUrl,
+      paymentQrString: qris.qrString,
       paymentDeeplinkUrl: qris.deeplinkUrl,
       paymentActions: qris.actions,
       amount

@@ -1,9 +1,18 @@
 import crypto from "node:crypto";
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 
 function parsePterodactylConfig(raw: FormDataEntryValue | null) { const text = String(raw ?? "").trim(); if (!text) return null; try { return JSON.parse(text); } catch { throw new Error("Pterodactyl config harus berupa JSON yang valid."); } }
+
+function revalidateCatalog(productId?: string) {
+  revalidatePath("/");
+  revalidatePath("/products");
+  revalidatePath("/panel");
+  revalidatePath("/admin");
+  if (productId) revalidatePath(`/products/${productId}`);
+}
 
 export async function POST(request: Request) {
   try {
@@ -41,6 +50,7 @@ export async function POST(request: Request) {
     const stock = service_type === "pterodactyl" ? 0 : stockInput;
     const { data: createdProduct, error: insertError } = await admin.from("products").insert({ name, category, description, price, stock, image_url: publicUrl, featured, service_type, sold_count, pterodactyl_config, is_active, live_chat_enabled, support_admin_ids, external_link }).select("id").single();
     if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
+    revalidateCatalog(createdProduct.id);
     return NextResponse.json({ success: true, productId: createdProduct.id });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Gagal membuat produk" }, { status: 500 }); }
 }

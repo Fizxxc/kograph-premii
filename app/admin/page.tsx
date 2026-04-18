@@ -5,6 +5,11 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { ProductManager } from "@/components/admin/product-manager";
 import { CreateProductForm } from "@/components/admin/create-product-form";
+import { CouponManager } from "@/components/admin/coupon-manager";
+import { ExportButton } from "@/components/admin/export-button";
+import { BroadcastPanel } from "@/components/admin/broadcast-panel";
+import { BulkCredentialUpload } from "@/components/admin/bulk-credential-upload";
+import InventoryManager from "@/components/admin/inventory-manager";
 import VariantManager from "@/components/admin/variant-manager";
 import SiteSettingsManager from "@/components/admin/site-settings-manager";
 import LiveChatAdminPanel from "@/components/live-chat/live-chat-admin-panel";
@@ -53,6 +58,7 @@ export default async function AdminPage() {
     { data: variants },
     { data: popups },
     { data: alerts },
+    { data: coupons },
     { count: pendingTransactions },
     { count: openChats },
     { count: totalProducts },
@@ -79,6 +85,10 @@ export default async function AdminPage() {
       .select("id, title, message, tone, is_active, updated_at")
       .order("updated_at", { ascending: false })
       .limit(6),
+    admin
+      .from("coupons")
+      .select("id, code, type, value, min_purchase, max_discount, quota, used_count, is_active")
+      .order("created_at", { ascending: false }),
     admin.from("transactions").select("id", { count: "exact", head: true }).eq("status", "pending"),
     admin.from("live_chat_rooms").select("id", { count: "exact", head: true }).or("status.eq.open,status.eq.pending"),
     admin.from("products").select("id", { count: "exact", head: true }),
@@ -112,6 +122,10 @@ export default async function AdminPage() {
                 <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-slate-200">Desain lebih bersih di desktop & mobile</div>
                 <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-slate-200">Tetap pakai API dan tabel lama</div>
               </div>
+
+              <div className="mt-6 flex flex-wrap gap-3">
+                <ExportButton />
+              </div>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
@@ -144,8 +158,12 @@ export default async function AdminPage() {
         </section>
 
         <CreateProductForm />
+        <InventoryManager products={(products || []) as any} />
+        <BulkCredentialUpload products={((products || []).filter((item: any) => item.service_type !== "pterodactyl")) as any} />
         <ProductManager products={(products || []) as any} />
         <VariantManager products={(products || []) as any} variants={(variants || []) as any} />
+        <CouponManager coupons={(coupons || []) as any} />
+        <BroadcastPanel />
         <SiteSettingsManager popups={(popups || []) as any} alerts={(alerts || []) as any} />
         <LiveChatAdminPanel />
       </div>
