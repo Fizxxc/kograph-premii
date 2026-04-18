@@ -11,7 +11,7 @@ export async function POST(request: Request) {
   const body = await request.json();
   const roomId = String(body.roomId || "").trim();
   const productId = String(body.productId || "").trim();
-  const paymentMethod = "qris";
+  const paymentMethod = String(body.paymentMethod || "midtrans").trim().toLowerCase();
   if (!roomId || !productId) return NextResponse.json({ error: "roomId dan productId wajib diisi" }, { status: 400 });
 
   const origin = String(process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/$/, "");
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
   const json = await checkoutResponse.json();
   if (!checkoutResponse.ok) return NextResponse.json(json, { status: checkoutResponse.status });
 
-  const paymentUrl = json.paymentQrUrl || `${origin}${json.redirectUrl || `/waiting-payment/${json.orderId}`}`;
+  const paymentUrl = json.snapRedirectUrl || json.paymentQrUrl || `${origin}${json.redirectUrl || `/waiting-payment/${json.orderId}`}`;
   await admin.from("live_chat_messages").insert({
     room_id: roomId,
     sender_user_id: null,

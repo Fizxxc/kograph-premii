@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-import { createMidtransQrisTransaction } from "@/lib/midtrans";
+import { createMidtransQrisTransaction, createMidtransSnapTransaction } from "@/lib/midtrans";
 import { fulfillProductOrder } from "@/lib/fulfillment";
 import { getDefaultWhatsappBotEnvironment, getPanelPresetByKey } from "@/lib/panel-packages";
 import { isChatBasedService, isPanelService } from "@/lib/service-types";
@@ -253,16 +253,22 @@ export async function createTelegramProductOrder(input: {
     };
   }
 
-  const qris = await createMidtransQrisTransaction({ orderId, amount: finalAmount, itemDetails, customerDetails });
+  const snap = await createMidtransSnapTransaction({
+    orderId,
+    amount: finalAmount,
+    itemDetails,
+    customerDetails,
+    enabledPayments: ["qris", "gopay", "shopeepay", "bca_va", "bni_va", "permata_va"]
+  });
+
   const { error: insertError } = await admin.from("transactions").insert({
     ...basePayload,
-    payment_method: "qris",
-    snap_token: qris.transactionId || qris.qrUrl || "QRIS_PENDING",
+    payment_method: "midtrans",
+    snap_token: snap.token || "SNAP_PENDING",
     fulfillment_data: {
       ...(basePayload.fulfillment_data || {}),
-      payment_type: "qris",
-      payment_qr_url: qris.qrUrl || null,
-      payment_actions: qris.actions || null,
+      payment_type: "snap",
+      payment_redirect_url: snap.redirectUrl || waitingUrl,
       payment_fallback_url: waitingUrl
     }
   });
@@ -270,13 +276,13 @@ export async function createTelegramProductOrder(input: {
 
   return {
     orderId,
-    paymentUrl: qris.qrUrl,
-    paymentQrUrl: qris.qrUrl,
-    snapUrl: qris.qrUrl,
+    paymentUrl: snap.redirectUrl,
+    paymentQrUrl: null,
+    snapUrl: snap.redirectUrl,
     waitingUrl,
     finalAmount,
     statusToken,
-    paymentMethod: "qris",
+    paymentMethod: "midtrans",
     redirectPath: `/waiting-payment/${orderId}`
   };
 }
@@ -290,7 +296,7 @@ export async function createTelegramTopup(input: { userId: string; amount: numbe
   const appUrl = String(process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/$/, "");
   const waitingUrl = appUrl ? `${appUrl}/profile` : "/profile";
 
-  const qris = await createMidtransQrisTransaction({
+  const snap = await createMidtransSnapTransaction({
     orderId,
     amount: input.amount,
     itemDetails: [{ id: orderId, price: input.amount, quantity: 1, name: "Top Up Saldo Telegram Kograph" }],
@@ -305,11 +311,11 @@ export async function createTelegramTopup(input: { userId: string; amount: numbe
     user_id: input.userId,
     amount: input.amount,
     status: "pending",
-    snap_token: qris.transactionId || qris.qrUrl || "QRIS_PENDING"
+    snap_token: snap.token || snap.redirectUrl || "SNAP_PENDING"
   });
   if (error) throw new Error(error.message);
 
-  return { orderId, amount: input.amount, paymentUrl: qris.qrUrl, paymentQrUrl: qris.qrUrl, snapUrl: qris.qrUrl, waitingUrl };
+  return { orderId, amount: input.amount, paymentUrl: snap.redirectUrl, paymentQrUrl: null, snapUrl: snap.redirectUrl, waitingUrl };
 }
 
 export async function adjustWalletByTelegramAdmin(input: {

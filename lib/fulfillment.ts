@@ -20,7 +20,7 @@ function safeUsername(value: string) {
   );
 }
 
-function buildPanelCredentials(preferredUsername?: string | null, preferredEmail?: string | null) {
+function buildPanelCredentials(preferredUsername?: string | null) {
   const seed = crypto.randomBytes(3).toString("hex");
   const username = `${safeUsername(preferredUsername || "panel")}${seed}`.slice(
     0,
@@ -28,7 +28,7 @@ function buildPanelCredentials(preferredUsername?: string | null, preferredEmail
   );
   const emailDomain =
     process.env.PTERODACTYL_LOGIN_DOMAIN?.trim() || "panel.kograph.local";
-  const email = preferredEmail?.trim().toLowerCase() || `${username}@${emailDomain}`;
+  const email = `${username}@${emailDomain}`;
   const password = `KgP!${crypto.randomBytes(6).toString("base64url")}`;
   return { username, email, password };
 }
@@ -237,7 +237,7 @@ async function notifyAdminsForChatService(input: {
     /\/$/,
     ""
   )}/chat/${input.roomId}`;
-  const customerName = input.tx.guest_email || input.tx.guest_name || input.tx.user_id || "guest";
+  const customerName = input.tx.user_id;
 
   const text = [
     `💬 <b>Order live chat sudah dibayar</b>`,
@@ -266,7 +266,7 @@ export async function fulfillProductOrder(orderId: string) {
   const { data: tx, error } = await admin
     .from("transactions")
     .select(
-      `id, order_id, user_id, product_id, status, coupon_code, telegram_id, payment_method, final_amount, fulfillment_data, guest_name, guest_email,
+      `id, order_id, user_id, product_id, status, coupon_code, telegram_id, payment_method, final_amount, fulfillment_data,
        products ( id, name, service_type, pterodactyl_config, sold_count, stock, live_chat_enabled, support_admin_ids )`
     )
     .eq("order_id", orderId)
@@ -371,23 +371,16 @@ export async function fulfillProductOrder(orderId: string) {
   const pendingFulfillment = (tx as any).fulfillment_data || {};
   const preferredUsername =
     pendingFulfillment.requested_username || (tx as any).telegram_id || "panel";
-  const guestName = String((tx as any).guest_name || "").trim();
-  const guestEmail = String((tx as any).guest_email || "").trim().toLowerCase();
-  let accountEmail = guestEmail;
-  let fullName = guestName || preferredUsername || "Customer Premium";
+  const credentials = buildPanelCredentials(preferredUsername);
 
-  if ((tx as any).user_id) {
-    const { data: userRow, error: userError } = await admin.auth.admin.getUserById(
-      (tx as any).user_id
-    );
-    if (userError) throw new Error(userError.message);
-    accountEmail = String(userRow.user?.email || guestEmail || "").trim().toLowerCase();
-    fullName = String(
-      userRow.user?.user_metadata?.full_name || guestName || preferredUsername || "Customer Premium"
-    );
-  }
+  const { data: userRow, error: userError } = await admin.auth.admin.getUserById(
+    (tx as any).user_id
+  );
+  if (userError) throw new Error(userError.message);
 
-  const panelIdentity = buildPanelCredentials(preferredUsername, accountEmail || undefined);
+  const fullName = String(
+    userRow.user?.user_metadata?.full_name || preferredUsername || "Customer Premium"
+  );
 
   const preparedConfig = await preparePterodactylServerConfig({
     nest_id: Number(
@@ -415,15 +408,15 @@ export async function fulfillProductOrder(orderId: string) {
   });
 
   const panelUser = await createPterodactylUser({
-    email: panelIdentity.email,
-    username: panelIdentity.username,
+    email: credentials.email,
+    username: credentials.username,
     first_name: fullName.split(" ")[0],
     last_name: fullName.split(" ").slice(1).join(" ") || "Premium",
-    password: panelIdentity.password,
+    password: credentials.password,
   });
 
   const server = await createPterodactylServer({
-    name: `${product.name} - ${panelIdentity.username}`,
+    name: `${product.name} - ${credentials.username}`,
     user_id: panelUser.id,
     external_id: orderId,
     config: preparedConfig,
@@ -434,11 +427,10 @@ export async function fulfillProductOrder(orderId: string) {
     type: "pterodactyl",
     telegram_id: (tx as any).telegram_id || null,
     requested_username: preferredUsername,
-    buyer_name: fullName,
     panel_url: process.env.PTERODACTYL_PANEL_URL || null,
-    panel_username: panelIdentity.username,
-    panel_email: panelIdentity.email,
-    panel_password: panelIdentity.password,
+    panel_username: credentials.username,
+    panel_email: credentials.email,
+    panel_password: credentials.password,
     panel_user_id: panelUser.id,
     server_id: server.id,
     server_uuid: server.uuid,

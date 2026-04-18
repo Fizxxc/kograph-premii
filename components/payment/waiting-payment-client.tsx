@@ -32,7 +32,6 @@ type FulfillmentData = {
   server_uuid?: string | null;
   requested_username?: string | null;
   payment_qr_url?: string | null;
-  payment_qr_string?: string | null;
   payment_fallback_url?: string | null;
   panel_plan_label?: string | null;
   memory_text?: string | null;
@@ -41,12 +40,6 @@ type FulfillmentData = {
   room_id?: string | null;
   status_note?: string | null;
 };
-
-function buildGeneratedQrUrl(qrString?: string | null) {
-  const value = String(qrString || "").trim();
-  if (!value) return "";
-  return `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(value)}`;
-}
 
 type WaitingPaymentClientProps = {
   transaction: {
@@ -73,7 +66,6 @@ export function WaitingPaymentClient({ transaction, initialAccountData }: Waitin
   const [fulfillmentData, setFulfillmentData] = useState<FulfillmentData | null>(transaction.fulfillment_data);
   const [isScriptReady, setIsScriptReady] = useState(false);
   const [openingSnap, setOpeningSnap] = useState(false);
-  const [qrImageSrc, setQrImageSrc] = useState("");
 
   const isPanel = transaction.service_type === "pterodactyl";
   const isChatService = ["design", "service", "live_chat", "custom"].includes(transaction.service_type);
@@ -84,12 +76,7 @@ export function WaitingPaymentClient({ transaction, initialAccountData }: Waitin
       (isQrisOnly && transaction.snap_token?.startsWith("http") ? transaction.snap_token : null),
     [fulfillmentData?.payment_qr_url, isQrisOnly, transaction.snap_token]
   );
-  const generatedQrUrl = useMemo(() => buildGeneratedQrUrl(fulfillmentData?.payment_qr_string), [fulfillmentData?.payment_qr_string]);
-  const backupPayUrl = fulfillmentData?.payment_fallback_url || paymentQrUrl || generatedQrUrl;
-
-  useEffect(() => {
-    setQrImageSrc(String(paymentQrUrl || generatedQrUrl || ""));
-  }, [paymentQrUrl, generatedQrUrl]);
+  const backupPayUrl = fulfillmentData?.payment_fallback_url || paymentQrUrl;
 
   useEffect(() => {
     if (transaction.payment_method === "balance" || isQrisOnly) {
@@ -237,7 +224,7 @@ export function WaitingPaymentClient({ transaction, initialAccountData }: Waitin
           {isPanel && fulfillmentData?.memory_text && <InfoBox label="Spesifikasi" value={`RAM ${fulfillmentData.memory_text} • Disk ${fulfillmentData.disk_text || '-'} • CPU ${fulfillmentData.cpu_text || '-'}`} />}
         </div>
 
-        {isQrisOnly && qrImageSrc && status !== "settlement" && (
+        {isQrisOnly && paymentQrUrl && status !== "settlement" && (
           <div className="rounded-3xl border border-brand-500/30 bg-brand-500/10 p-5">
             <div className="mb-3 flex items-center gap-2 text-brand-200">
               <QrCode className="h-5 w-5" />
@@ -245,16 +232,10 @@ export function WaitingPaymentClient({ transaction, initialAccountData }: Waitin
             </div>
             <div className="rounded-3xl bg-white p-4">
               <img
-                src={qrImageSrc}
+                src={paymentQrUrl}
                 alt="QRIS Dinamis"
                 className="mx-auto aspect-square w-full max-w-sm object-contain"
-                onError={() => {
-                  if (generatedQrUrl && qrImageSrc !== generatedQrUrl) {
-                    setQrImageSrc(generatedQrUrl);
-                    return;
-                  }
-                  toast.message("Gambar QR tidak tampil. Gunakan link backup pembayaran di bawah.");
-                }}
+                onError={() => toast.message("Gambar QR tidak tampil. Gunakan link backup pembayaran di bawah.")}
               />
             </div>
             <div className="mt-4 text-sm text-slate-300">

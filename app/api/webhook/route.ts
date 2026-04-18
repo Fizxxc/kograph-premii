@@ -2,81 +2,70 @@ import { NextResponse } from "next/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { verifyMidtransSignature } from "@/lib/midtrans";
 import { fulfillProductOrder, settleWalletTopup } from "@/lib/fulfillment";
-import { sendTopupPaidEmail, sendTransactionPaidEmail } from "@/lib/transaction-emails";
 
-const PAID_STATUSES = new Set(["settlement", "capture"]);
-const FAILED_STATUSES = new Set(["expire", "cancel", "deny", "failure"]);
+export const runtime = "nodejs";
+
+function resolveStatus(payload: { transaction_status?: string; fraud_status?: string }) {
+  const transactionStatus = String(payload.transaction_status ?? "").trim();
+  const fraudStatus = String(payload.fraud_status ?? "").trim();
+
+  if (transactionStatus === "settlement") return "settlement";
+  if (transactionStatus === "capture" && fraudStatus === "accept") return "settlement";
+  if (["cancel", "deny", "expire", "failure"].includes(transactionStatus)) return "expire";
+  return "pending";
+}
+
+export async function GET() {
+  return NextResponse.json({ ok: true, message: "Midtrans webhook endpoint is alive. Use POST for notifications." });
+}
 
 export async function POST(request: Request) {
   try {
-    const payload = await request.json();
-    const orderId = String(payload?.order_id || "").trim();
-    const transactionStatus = String(payload?.transaction_status || "").trim().toLowerCase();
-    const fraudStatus = String(payload?.fraud_status || "").trim().toLowerCase();
-
-    if (!orderId) return NextResponse.json({ error: "order_id wajib ada." }, { status: 400 });
-
-    const signatureValid = verifyMidtransSignature({
-      order_id: orderId,
-      status_code: String(payload?.status_code || ""),
-      gross_amount: String(payload?.gross_amount || ""),
-      signature_key: String(payload?.signature_key || "")
-    });
-
-    if (!signatureValid) {
-      return NextResponse.json({ error: "Signature Midtrans tidak valid." }, { status: 403 });
-    }
-
-    const normalizedStatus = PAID_STATUSES.has(transactionStatus) && fraudStatus !== "deny"
-      ? "settlement"
-      : FAILED_STATUSES.has(transactionStatus)
-        ? transactionStatus
-        : transactionStatus || "pending";
-
     const admin = createAdminSupabaseClient();
-    const { data: tx } = await admin.from("transactions").select("id, order_id, status").eq("order_id", orderId).maybeSingle();
-    const { data: topup } = await admin.from("wallet_topups").select("id, order_id, status").eq("order_id", orderId).maybeSingle();
+    const payload = await request.json();
+    const orderId = String(payload.order_id ?? "").trim();
+    const transactionStatus = String(payload.transaction_status ?? "").trim();
+    const statusCode = String(payload.status_code ?? "").trim();
+    const grossAmount = String(payload.gross_amount ?? "").trim();
+    const signatureKey = String(payload.signature_key ?? "").trim();
 
-    if (!tx && !topup) {
-      return NextResponse.json({ ok: true, ignored: true });
+    if (!orderId || !transactionStatus || !statusCode || !grossAmount || !signatureKey) {
+      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
-    if (tx) {
-      const updatePayload: Record<string, unknown> = {
-        status: normalizedStatus,
-        gateway_reference: payload?.transaction_id ? String(payload.transaction_id) : null,
-        gateway_payload: payload
-      };
-      if (normalizedStatus === "settlement") updatePayload.paid_at = new Date().toISOString();
-      await admin.from("transactions").update(updatePayload).eq("id", (tx as any).id);
+    const isSignatureValid = verifyMidtransSignature({
+      order_id: orderId,
+      status_code: statusCode,
+      gross_amount: grossAmount,
+      signature_key: signatureKey
+    });
+    if (!isSignatureValid) return NextResponse.json({ error: "Invalid signature" }, { status: 403 });
 
-      if (normalizedStatus === "settlement" && (tx as any).status !== "settlement") {
-        await fulfillProductOrder(orderId);
-        await sendTransactionPaidEmail(orderId).catch((error) => {
-          console.error("EMAIL_TRANSACTION_FAILED", error);
-        });
+    const resolvedStatus = resolveStatus(payload);
+
+    if (resolvedStatus === "settlement") {
+      const { data: topup } = await admin.from("wallet_topups").select("id").eq("order_id", orderId).maybeSingle();
+      if (topup) {
+        const result = await settleWalletTopup(orderId);
+        return NextResponse.json({ success: true, type: "topup", result });
       }
+
+      const { data: tx } = await admin.from("transactions").select("id").eq("order_id", orderId).maybeSingle();
+      if (!tx) return NextResponse.json({ error: "Order tidak ditemukan" }, { status: 404 });
+      const result = await fulfillProductOrder(orderId);
+      return NextResponse.json({ success: true, type: "product", result });
     }
 
-    if (topup) {
-      const updatePayload: Record<string, unknown> = {
-        status: normalizedStatus,
-        gateway_reference: payload?.transaction_id ? String(payload.transaction_id) : null,
-        gateway_payload: payload
-      };
-      if (normalizedStatus === "settlement") updatePayload.paid_at = new Date().toISOString();
-      await admin.from("wallet_topups").update(updatePayload).eq("id", (topup as any).id);
-
-      if (normalizedStatus === "settlement" && (topup as any).status !== "settlement") {
-        await settleWalletTopup(orderId);
-        await sendTopupPaidEmail(orderId).catch((error) => {
-          console.error("EMAIL_TOPUP_FAILED", error);
-        });
-      }
+    if (resolvedStatus === "pending") {
+      await admin.from("transactions").update({ status: "pending" }).eq("order_id", orderId);
+      await admin.from("wallet_topups").update({ status: "pending" }).eq("order_id", orderId);
+      return NextResponse.json({ success: true, message: "Pending stored" });
     }
 
-    return NextResponse.json({ ok: true });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message || "Webhook Midtrans gagal diproses." }, { status: 500 });
+    await admin.from("transactions").update({ status: "expire" }).eq("order_id", orderId);
+    await admin.from("wallet_topups").update({ status: "expire" }).eq("order_id", orderId);
+    return NextResponse.json({ success: true, message: "Expired stored" });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Webhook error" }, { status: 500 });
   }
 }

@@ -12,10 +12,10 @@ export function Button({
   ...props
 }: ButtonProps) {
   const variants: Record<string, string> = {
-    default: "bg-slate-950 text-white hover:bg-slate-800 dark:bg-amber-300 dark:text-slate-950 dark:hover:bg-amber-200",
-    secondary: "bg-white/80 text-slate-900 hover:bg-white border border-slate-200/80 dark:bg-white/5 dark:text-white dark:hover:bg-white/10 dark:border-white/10",
-    outline: "border border-slate-200/80 bg-transparent text-slate-900 hover:bg-white/60 dark:border-white/15 dark:text-white dark:hover:bg-white/5",
-    ghost: "bg-transparent text-slate-900 hover:bg-white/60 dark:text-white dark:hover:bg-white/5",
+    default: "bg-brand-600 text-white hover:bg-brand-500 shadow-lg shadow-brand-600/20",
+    secondary: "bg-white/10 text-white hover:bg-white/15 border border-white/10",
+    outline: "border border-white/15 bg-transparent text-white hover:bg-white/5",
+    ghost: "bg-transparent text-white hover:bg-white/5",
     danger: "bg-rose-600 text-white hover:bg-rose-500"
   };
 

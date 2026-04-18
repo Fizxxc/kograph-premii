@@ -7,7 +7,26 @@ type CookieToSet = {
   options?: Parameters<NextResponse["cookies"]["set"]>[2];
 };
 
+const MAINTENANCE_ENABLED = true;
+const MAINTENANCE_PATH = "/maintenance";
+const EXCLUDED_PREFIXES = ["/_next", "/api", "/favicon.ico"];
+const EXCLUDED_FILE_REGEX = /\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map|txt|xml)$/i;
+
 export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  if (
+    MAINTENANCE_ENABLED &&
+    pathname !== MAINTENANCE_PATH &&
+    !EXCLUDED_PREFIXES.some((prefix) => pathname.startsWith(prefix)) &&
+    !EXCLUDED_FILE_REGEX.test(pathname)
+  ) {
+    const maintenanceUrl = request.nextUrl.clone();
+    maintenanceUrl.pathname = MAINTENANCE_PATH;
+    maintenanceUrl.search = "";
+    return NextResponse.redirect(maintenanceUrl);
+  }
+
   let response = NextResponse.next({
     request: {
       headers: request.headers
@@ -47,7 +66,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"
-  ]
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"]
 };

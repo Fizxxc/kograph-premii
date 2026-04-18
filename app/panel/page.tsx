@@ -1,5 +1,5 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import ProductCard from "@/components/product-card";
+import { ProductCard } from "@/components/product-card";
 import { Card } from "@/components/ui/card";
 import { SITE } from "@/lib/constants";
 import { PANEL_RAM_PRESETS } from "@/lib/panel-packages";
