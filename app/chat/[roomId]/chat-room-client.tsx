@@ -81,7 +81,8 @@ export function ChatRoomClient({ roomId }: { roomId: string }) {
     }
   }
 
-  async function orderFromChat(productId: string, paymentMethod: "midtrans" | "qris") {
+  async function orderFromChat(productId: string) {
+    const paymentMethod = "qris" as const;
     setOrdering(`${productId}:${paymentMethod}`);
     try {
       const res = await fetch("/api/live-chat/order", {
@@ -91,7 +92,7 @@ export function ChatRoomClient({ roomId }: { roomId: string }) {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Gagal membuat order");
-      toast.success(paymentMethod === "midtrans" ? "Link Snap sudah dikirim ke room chat." : "QRIS sudah dikirim ke room chat.");
+      toast.success("QRIS pembayaran sudah dikirim ke room chat.");
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Gagal membuat order");
@@ -128,12 +129,9 @@ export function ChatRoomClient({ roomId }: { roomId: string }) {
                     <div className="mt-1 text-sm text-slate-300">{formatRupiah(item.price)} • stok {item.stock}</div>
                   </div>
                 </div>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <Button variant="secondary" disabled={ordering !== null} onClick={() => orderFromChat(item.id, "midtrans")}>
-                    {ordering === `${item.id}:midtrans` ? "Memproses..." : "Bayar via Snap"}
-                  </Button>
-                  <Button disabled={ordering !== null} onClick={() => orderFromChat(item.id, "qris")}>
-                    {ordering === `${item.id}:qris` ? "Memproses..." : "Bayar via QRIS"}
+                <div className="mt-3 grid gap-2">
+                  <Button disabled={ordering !== null} onClick={() => orderFromChat(item.id)}>
+                    {ordering === `${item.id}:qris` ? "Memproses..." : "Bayar via QRIS dinamis"}
                   </Button>
                 </div>
               </div>

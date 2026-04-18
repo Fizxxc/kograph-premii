@@ -10,7 +10,7 @@ export function HeroBanner() {
       <div className="relative grid gap-10 lg:grid-cols-[1.05fr_0.95fr]">
         <div className="max-w-3xl">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs uppercase tracking-[0.22em] text-slate-200">
-            Bot Telegram Support • Realtime Payment • 24/7 Support
+            QRIS Dinamis • Realtime Payment • Support Ramah
           </div>
 
           <h1 className="mt-6 text-4xl font-black leading-tight md:text-6xl">
@@ -18,7 +18,7 @@ export function HeroBanner() {
           </h1>
 
           <p className="mt-5 max-w-2xl text-base leading-7 text-slate-300">
-            Kograph Premium adalah marketplace digital premium untuk kebutuhan akun aplikasi, tools produktivitas, hiburan, dan layanan digital lainnya dengan proses pembelian cepat, pembayaran aman, serta pengiriman credential yang realtime.
+            Tempat yang nyaman untuk beli kebutuhan digital tanpa alur ribet. Tinggal pilih paket, scan QRIS dinamis, lalu status order bisa langsung dipantau sampai selesai.
           </p>
 
           <div className="mt-7 flex flex-wrap gap-3">
@@ -31,19 +31,19 @@ export function HeroBanner() {
           <div className="mt-8 grid gap-3 md:grid-cols-3">
             <div className="glass rounded-3xl p-4">
               <ShieldCheck className="h-5 w-5 text-emerald-400" />
-              <div className="mt-2 font-semibold text-white">Secure</div>
-              <div className="mt-1 text-sm text-slate-300">Transaksi aman, pengiriman cepat, support responsif.</div>
+              <div className="mt-2 font-semibold text-white">Aman</div>
+              <div className="mt-1 text-sm text-slate-300">Pembayaran tervalidasi dari server sebelum pesanan diproses.</div>
             </div>
             <div className="glass rounded-3xl p-4">
               <Zap className="h-5 w-5 text-brand-300" />
               <div className="mt-2 font-semibold text-white">Realtime</div>
-              <div className="mt-1 text-sm text-slate-300">Payment Realtime & Pengiriman instan</div>
+              <div className="mt-1 text-sm text-slate-300">QRIS realtime & update status langsung</div>
             </div>
             <div className="glass rounded-3xl p-4">
               <MessageCircleMore className="h-5 w-5 text-fuchsia-300" />
               <div className="mt-2 font-semibold text-white">Support & Status</div>
               <div className="mt-1 text-sm text-slate-300">
-                Cek status pesanan lewat Telegram bot dan hubungi support dengan lebih mudah.
+                Bisa cek resi tanpa login dan hubungi support saat dibutuhkan.
               </div>
             </div>
           </div>
@@ -69,7 +69,7 @@ export function HeroBanner() {
             </div>
 
             <div className="mt-4 space-y-3 text-sm leading-6 text-slate-300">
-              <div>• Pembayaran cepat dan aman melalui Midtrans Snap</div>
+              <div>• Pembayaran QRIS dinamis Midtrans yang lebih ringkas</div>
               <div>• Data akun dikirim otomatis setelah pembayaran berhasil</div>
               <div>• Invoice transaksi bisa langsung diunduh kapan saja</div>
               <div>• Status pesanan dapat dicek dengan mudah lewat bot Telegram</div>

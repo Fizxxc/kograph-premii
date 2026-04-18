@@ -3,50 +3,152 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  --background: #f6f1e6;
+  --background-soft: #fbf8f1;
+  --foreground: #0f172a;
+  --muted: #64748b;
+  --card: rgba(255, 255, 255, 0.8);
+  --card-strong: rgba(255, 255, 255, 0.92);
+  --border: rgba(15, 23, 42, 0.08);
 }
 
-html, body {
-  min-height: 100%;
-  background:
-    radial-gradient(circle at top, rgba(99,102,241,0.18), transparent 24%),
-    linear-gradient(180deg, #0f172a 0%, #020617 100%);
-  color: #f8fafc;
-}
-
-body {
-  @apply antialiased;
+.dark {
+  --background: #07111f;
+  --background-soft: #0b1728;
+  --foreground: #f8fafc;
+  --muted: #94a3b8;
+  --card: rgba(9, 20, 37, 0.82);
+  --card-strong: rgba(11, 23, 40, 0.96);
+  --border: rgba(255, 255, 255, 0.08);
 }
 
 * {
-  @apply border-slate-800;
+  box-sizing: border-box;
 }
 
-.container-shell {
-  @apply mx-auto w-full max-w-7xl px-4 md:px-6;
+html {
+  scroll-behavior: smooth;
 }
 
-.glass {
-  @apply border border-white/10 bg-white/5 backdrop-blur-xl;
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(250, 204, 21, 0.14), transparent 30%),
+    radial-gradient(circle at top right, rgba(245, 158, 11, 0.09), transparent 18%),
+    linear-gradient(180deg, var(--background-soft) 0%, var(--background) 100%);
+  color: var(--foreground);
+  transition: background 220ms ease, color 220ms ease;
 }
 
-.premium-card {
-  @apply rounded-3xl border border-white/10 bg-slate-950/70 shadow-premium;
+.dark body {
+  background:
+    radial-gradient(circle at top left, rgba(250, 204, 21, 0.12), transparent 24%),
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.12), transparent 18%),
+    linear-gradient(180deg, #07111f 0%, #0a1627 100%);
 }
 
-.gradient-text {
-  background: linear-gradient(135deg, #ffffff, #c7d2fe 35%, #818cf8 65%, #f9a8d4 100%);
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+.container {
+  @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+}
+
+.surface-card {
+  @apply rounded-[32px] border backdrop-blur;
+  border-color: var(--border);
+  background: var(--card);
+  box-shadow: 0 24px 70px -38px rgba(15, 23, 42, 0.28);
+}
+
+.dark .surface-card {
+  box-shadow: 0 28px 80px -42px rgba(0, 0, 0, 0.7);
+}
+
+.grid-shell {
+  @apply grid gap-6 lg:gap-8;
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, #0f172a 0%, #7c4a03 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
-.grid-bg {
-  background-image:
-    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
-  background-size: 30px 30px;
+.dark .text-gradient {
+  background: linear-gradient(135deg, #f8fafc 0%, #facc15 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
-.hide-scrollbar::-webkit-scrollbar {
-  display: none;
+.pending-glow {
+  animation: pulseGlow 1.8s ease-in-out infinite;
+}
+
+@keyframes pulseGlow {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.28); }
+  50% { transform: scale(1.03); box-shadow: 0 0 0 18px rgba(250, 204, 21, 0); }
+}
+
+.success-glow {
+  animation: successFloat 2.4s ease-in-out infinite;
+}
+
+@keyframes successFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@layer base {
+  ::selection {
+    background: rgba(250, 204, 21, 0.35);
+  }
+}
+
+
+.reveal-up {
+  animation: revealUp 0.65s ease both;
+}
+
+.float-soft {
+  animation: floatSoft 6s ease-in-out infinite;
+}
+
+.shine-border {
+  position: relative;
+  overflow: hidden;
+}
+
+.shine-border::after {
+  content: "";
+  position: absolute;
+  inset: -120% auto auto -40%;
+  width: 40%;
+  height: 300%;
+  transform: rotate(18deg);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
+  animation: shineMove 4.8s ease-in-out infinite;
+}
+
+@keyframes revealUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes floatSoft {
+  0%,100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes shineMove {
+  0% { transform: translateX(-160%) rotate(18deg); }
+  50%, 100% { transform: translateX(520%) rotate(18deg); }
 }

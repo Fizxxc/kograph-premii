@@ -1,31 +1,53 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { NextResponse, type NextRequest } from "next/server";
 
-const MAINTENANCE_TARGET = new Date("2026-04-22T22:00:00+07:00").getTime();
+type CookieToSet = {
+  name: string;
+  value: string;
+  options?: Parameters<NextResponse["cookies"]["set"]>[2];
+};
 
-export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-  const now = Date.now();
-  const maintenanceActive = now < MAINTENANCE_TARGET;
-
-  if (!maintenanceActive) {
-    if (pathname === "/maintenance") {
-      return NextResponse.redirect(new URL("/", request.url));
+export async function middleware(request: NextRequest) {
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers
     }
-    return NextResponse.next();
-  }
+  });
 
-  if (pathname === "/maintenance") {
-    return NextResponse.next();
-  }
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet: CookieToSet[]) {
+          cookiesToSet.forEach(({ name, value }) => {
+            request.cookies.set(name, value);
+          });
 
-  const url = request.nextUrl.clone();
-  url.pathname = "/maintenance";
-  return NextResponse.redirect(url);
+          response = NextResponse.next({
+            request: {
+              headers: request.headers
+            }
+          });
+
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
+          });
+        }
+      }
+    }
+  );
+
+  await supabase.auth.getUser();
+
+  return response;
 }
 
 export const config = {
   matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico|icon-192.png|sw.js|push-notification.js).*)"
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"
   ]
 };

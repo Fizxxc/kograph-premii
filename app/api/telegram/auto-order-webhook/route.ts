@@ -46,9 +46,7 @@ function paymentChoiceKeyboard(productId: string, panelPlanKey?: string) {
   return {
     inline_keyboard: [
       ...(selected ? [[{ text: `Paket: ${selected.label} • ${formatRupiah(selected.price)}`, callback_data: "noop:selected" }]] : []),
-      [{ text: "✨ Bayar via Midtrans Snap", callback_data: `buy:${productId}:midtrans${suffix}` }],
-      [{ text: "⚡ Bayar QRIS langsung", callback_data: `buy:${productId}:qris${suffix}` }],
-      [{ text: "👛 Bayar dengan saldo akun", callback_data: `buy:${productId}:balance${suffix}` }],
+      [{ text: "⚡ Bayar QRIS dinamis", callback_data: `buy:${productId}:qris${suffix}` }],
       [{ text: "💳 Top up saldo", callback_data: "topup:menu" }],
       [{ text: "⬅️ Kembali", callback_data: panelPlanKey ? `planback:${productId}` : "catalog:list" }]
     ]
@@ -70,7 +68,7 @@ function mainKeyboard() {
 function buildPaymentLinks(result: any) {
   const buttons: any[] = [];
   if (result.paymentUrl) {
-    buttons.push([{ text: result.paymentMethod === "midtrans" ? "✨ Buka Snap Midtrans" : "🔗 Link bayar backup", url: result.paymentUrl }]);
+    buttons.push([{ text: "⚡ Buka halaman QRIS", url: result.paymentUrl }]);
   }
   if (result.waitingUrl) buttons.push([{ text: "🌐 Buka halaman order web", url: result.waitingUrl }]);
   buttons.push(...buildCheckBotButtons().inline_keyboard);
@@ -142,7 +140,7 @@ async function showHome(chatId: number, messageId?: number) {
     `Bot ini bisa dipakai untuk:`,
     `• buat order produk secara otomatis`,
     `• order panel bot WhatsApp dengan pilihan paket 1GB sampai Unlimited`,
-    `• bayar pakai Midtrans Snap, QRIS, atau saldo`,
+    `• bayar pakai QRIS dinamis yang langsung terhubung ke status order`,
     `• top up saldo langsung dari Telegram`,
     `• daftar pertama kali langsung dari bot tanpa wajib daftar web`,
     `• lihat ringkasan saldo dan order sukses otomatis setelah webhook settlement`,
@@ -177,7 +175,7 @@ async function showPaymentResult(chatId: number, sourceMessageId: number, result
         "",
         `<b>Order ID</b>: <code>${result.orderId}</code>`,
         `<b>Nominal</b>: ${formatRupiah(result.amount)}`,
-        `<b>Pembayaran</b>: Midtrans Snap`,
+        `<b>Pembayaran</b>: QRIS dinamis`,
         `Selesaikan pembayaran dari tombol di bawah. Setelah settlement masuk, saldo akan otomatis bertambah.`
       ]
     : [
@@ -186,16 +184,10 @@ async function showPaymentResult(chatId: number, sourceMessageId: number, result
         `<b>Order ID</b>: <code>${result.orderId}</code>`,
         `<b>Total</b>: ${formatRupiah(result.finalAmount)}`,
         `<b>Token cek</b>: <code>${result.statusToken}</code>`,
-        result.paymentMethod === "midtrans"
-          ? `<b>Pembayaran</b>: Midtrans Snap`
-          : result.paymentUrl
-            ? `<b>Pembayaran</b>: QRIS dinamis`
-            : `<b>Pembayaran</b>: Dipotong dari saldo akun`,
-        result.paymentMethod === "midtrans"
-          ? `Selesaikan pembayaran dari tombol Snap. Setelah webhook settlement masuk, bot akan otomatis kirim status sukses.`
-          : result.paymentUrl
-            ? `Jika gambar QR tidak muncul, pakai link backup pada tombol di bawah.`
-            : `Order ini langsung diproses dari saldo akun Anda.`,
+        `<b>Pembayaran</b>: QRIS dinamis`,
+        result.paymentUrl
+          ? `Scan QRIS dari gambar atau pakai link backup pada tombol di bawah. Setelah settlement masuk, status akan otomatis sukses.`
+          : `Menunggu QRIS disiapkan oleh sistem.`,
         "",
         `Setelah bayar, Anda bisa cek status di @${SITE.botUsername}.`
       ];

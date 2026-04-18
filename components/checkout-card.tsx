@@ -1,325 +1,179 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Bot,
-  ExternalLink,
-  Loader2,
-  ServerCog,
-  ShieldCheck,
-  Tag,
-  UserRound,
-  Wallet
-} from "lucide-react";
-import { motion } from "framer-motion";
-import { toast } from "sonner";
-import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { SITE } from "@/lib/constants";
+import { Textarea } from "@/components/ui/textarea";
 import { formatRupiah } from "@/lib/utils";
-import { PANEL_RAM_PRESETS, getPanelPresetByKey } from "@/lib/panel-packages";
 
-type CheckoutProduct = {
+type Variant = {
   id: string;
+  name: string;
   price: number;
-  stock: number;
-  service_type?: string | null;
-  sold_count?: number | null;
-  live_chat_enabled?: boolean | null;
+  compare_at_price?: number | null;
+  duration_label?: string | null;
+  short_description?: string | null;
 };
 
-export function CheckoutCard({
-  product,
-  isAuthenticated,
-  userBalance = 0
-}: {
-  product: CheckoutProduct;
-  isAuthenticated: boolean;
-  userBalance?: number;
-}) {
+type CheckoutCardProps = {
+  product: {
+    id: string;
+    name: string;
+    description?: string | null;
+    price: number;
+    service_type?: string | null;
+  };
+  variants: Variant[];
+  user: {
+    email?: string | null;
+    full_name?: string | null;
+  } | null;
+};
+
+export default function CheckoutCard({ product, variants, user }: CheckoutCardProps) {
   const router = useRouter();
-  const serviceType = product.service_type || "credential";
-  const isPanel = serviceType === "pterodactyl";
-  const isChatService = ["design", "service", "live_chat", "custom"].includes(serviceType) || Boolean(product.live_chat_enabled);
-
-  const [stock, setStock] = useState(product.stock);
+  const [selectedVariantId, setSelectedVariantId] = useState<string>(variants[0]?.id || "");
+  const [buyerName, setBuyerName] = useState(user?.full_name || "");
+  const [buyerEmail, setBuyerEmail] = useState(user?.email || "");
+  const [buyerPhone, setBuyerPhone] = useState("");
   const [couponCode, setCouponCode] = useState("");
+  const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<"midtrans" | "qris" | "balance">("qris");
-  const [panelUsername, setPanelUsername] = useState("");
-  const [panelPlanKey, setPanelPlanKey] = useState(PANEL_RAM_PRESETS[0].key);
+  const [error, setError] = useState<string | null>(null);
 
-  const selectedPanelPlan = getPanelPresetByKey(panelPlanKey);
-  const checkoutPrice = isPanel ? selectedPanelPlan.price : product.price;
-
-  const stockLabel = useMemo(() => {
-    if (isPanel) return "Auto Ready 24/7 • panel bot WA dibuat otomatis setelah pembayaran berhasil";
-    if (isChatService) return "Jasa tanpa stok • setelah bayar admin langsung menerima bukti pembayaran otomatis";
-    if (stock <= 0) return "Stok habis";
-    if (stock <= 5) return `Sisa ${stock} item`;
-    return `Stok tersedia: ${stock}`;
-  }, [isPanel, stock]);
-
-  useEffect(() => {
-    const supabase = createBrowserSupabaseClient();
-
-    const channel = supabase
-      .channel(`product-stock-${product.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "products",
-          filter: `id=eq.${product.id}`
-        },
-        (payload) => {
-          const nextStock = Number((payload.new as { stock?: number }).stock ?? 0);
-          setStock(nextStock);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [product.id]);
+  const selectedVariant = useMemo(() => variants.find((item) => item.id === selectedVariantId) || null, [selectedVariantId, variants]);
+  const amount = Number(selectedVariant?.price || product.price || 0);
+  const compareAt = Number(selectedVariant?.compare_at_price || 0);
 
   async function handleCheckout() {
-    if (!isAuthenticated) {
-      router.push("/login");
-      return;
-    }
-
-    if (isPanel && !panelUsername.trim()) {
-      toast.error("Untuk pembelian panel, masukkan username panel yang ingin dipakai.");
-      return;
-    }
-
-    setLoading(true);
-
     try {
+      setLoading(true);
+      setError(null);
+
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           productId: product.id,
-          couponCode: couponCode.trim(),
-          paymentMethod,
-          panelUsername: panelUsername.trim(),
-          panelPlanKey
+          variantId: selectedVariant?.id || null,
+          buyerName,
+          buyerEmail,
+          buyerPhone,
+          couponCode,
+          note: notes,
+          paymentMethod: "qris"
         })
       });
 
-      const json = await response.json();
-      if (!response.ok) throw new Error(json.error || "Checkout gagal");
-
-      if (json.redirectTo) {
-        router.push(json.redirectTo);
-        return;
-      }
-
-      if (json.redirectUrl?.startsWith("/")) {
-        router.push(json.redirectUrl);
-        return;
-      }
-
-      if (json.redirectUrl) {
-        window.location.href = json.redirectUrl;
-        return;
-      }
-
-      router.push(`/waiting-payment/${json.orderId}`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Checkout gagal");
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(json.error || "Checkout gagal diproses."));
+      router.push(String(json.redirectUrl || `/waiting-payment/${json.orderId}`));
+    } catch (error: any) {
+      setError(error?.message || "Checkout gagal diproses.");
     } finally {
       setLoading(false);
     }
   }
 
-  const buttonDisabled =
-    loading ||
-    (!isPanel && !isChatService && stock <= 0) ||
-    (paymentMethod === "balance" && userBalance < checkoutPrice);
-
   return (
-    <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
-      <Card className="space-y-5">
-        <div>
-          <div className="text-sm uppercase tracking-[0.2em] text-slate-400">Secure Checkout</div>
-          <div className="mt-2 text-3xl font-bold text-white">{formatRupiah(checkoutPrice)}</div>
-          {isPanel && (
-            <div className="mt-1 text-sm text-brand-200">
-              Paket dipilih: {selectedPanelPlan.label} • RAM {selectedPanelPlan.memoryMb === 0 ? "Unlimited" : `${Math.round(selectedPanelPlan.memoryMb / 1024)}GB`} • CPU {selectedPanelPlan.cpuPercent === 0 ? "Unlimited" : `${selectedPanelPlan.cpuPercent}%`}
-            </div>
-          )}
-          <div className={`mt-2 text-sm ${isPanel || stock > 0 ? "text-emerald-300" : "text-rose-300"}`}>
-            {stockLabel}
-          </div>
-          <div className="mt-2 text-xs text-slate-400">Sudah terjual {product.sold_count || 0} kali</div>
+    <Card className="overflow-hidden border-slate-200/80 bg-white/80 shadow-[0_24px_80px_-40px_rgba(15,23,42,0.28)] dark:border-white/10 dark:bg-[rgba(11,20,40,0.75)] dark:shadow-[0_30px_100px_-50px_rgba(0,0,0,0.85)]">
+      <CardHeader className="space-y-4 pb-2">
+        <div className="inline-flex w-fit rounded-full border border-amber-200 bg-amber-50/90 px-3 py-1 text-xs font-black uppercase tracking-[0.24em] text-amber-700 dark:border-amber-300/20 dark:bg-amber-300/10 dark:text-amber-300">
+          Checkout cepat
         </div>
-
-        <div className="space-y-3 text-sm text-slate-300">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-emerald-400" />
-            Pembayaran aman dan otomatis
-          </div>
-          <div className="flex items-center gap-2">
-            <Tag className="h-4 w-4 text-fuchsia-300" />
-            Dukungan kupon promo aktif
-          </div>
-          {isPanel ? (
-            <div className="flex items-center gap-2">
-              <ServerCog className="h-4 w-4 text-brand-300" />
-              Satu produk panel dengan banyak pilihan spesifikasi khusus bot WhatsApp
-            </div>
-          ) : isChatService ? (
-            <div className="flex items-center gap-2">
-              <Bot className="h-4 w-4 text-brand-300" />
-              Jasa dikelola lewat live chat, bukti bayar otomatis masuk ke admin
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Bot className="h-4 w-4 text-brand-300" />
-              Akun atau credential tampil otomatis setelah settlement
-            </div>
-          )}
-        </div>
-
-        {isPanel && (
-          <div className="space-y-4 rounded-2xl border border-brand-500/20 bg-brand-500/10 p-4">
-            <div>
-              <label className="text-sm font-medium text-white">Username panel</label>
-              <Input
-                placeholder="Contoh: kographpanel1"
-                value={panelUsername}
-                onChange={(e) => setPanelUsername(e.target.value)}
-                className="mt-2"
-              />
-              <div className="mt-2 flex items-start gap-2 text-xs leading-6 text-slate-300">
-                <UserRound className="mt-0.5 h-4 w-4 text-brand-300" />
-                Cukup isi username. Sistem akan membuat username login, email login, dan password panel secara otomatis saat pembayaran berhasil.
-              </div>
-            </div>
-
-            <div>
-              <div className="mb-2 text-sm font-medium text-white">Pilih paket panel bot WA</div>
-              <div className="grid max-h-[340px] gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
-                {PANEL_RAM_PRESETS.map((plan) => {
-                  const active = panelPlanKey === plan.key;
-                  return (
-                    <button
-                      key={plan.key}
-                      type="button"
-                      onClick={() => setPanelPlanKey(plan.key)}
-                      className={`rounded-2xl border p-3 text-left transition ${
-                        active
-                          ? "border-brand-400 bg-brand-500/15 text-white"
-                          : "border-white/10 bg-slate-950/50 text-slate-300 hover:bg-white/10"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="font-semibold">{plan.label}</div>
-                        <div className="text-sm font-bold">{formatRupiah(plan.price)}</div>
+        <CardTitle className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">Pilih paket lalu lanjut ke pembayaran</CardTitle>
+        <p className="text-sm leading-7 text-slate-600 dark:text-slate-300">
+          Halaman ini dibuat lebih fokus supaya user bisa isi data dengan nyaman, pilih paket dengan jelas, lalu langsung lanjut ke QRIS dinamis tanpa langkah yang membingungkan.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {variants.length > 0 ? (
+          <div className="space-y-3">
+            <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">Pilih tipe paket</div>
+            <div className="grid gap-3">
+              {variants.map((variant) => {
+                const active = variant.id === selectedVariantId;
+                return (
+                  <button
+                    key={variant.id}
+                    type="button"
+                    onClick={() => setSelectedVariantId(variant.id)}
+                    className={`group rounded-[24px] border p-4 text-left transition duration-200 ${
+                      active
+                        ? "border-amber-300 bg-amber-50 shadow-[0_20px_50px_-32px_rgba(250,204,21,0.65)] dark:border-amber-300/40 dark:bg-amber-300/10"
+                        : "border-slate-200/80 bg-white/80 hover:border-amber-300 hover:bg-amber-50/60 dark:border-white/10 dark:bg-white/5 dark:hover:border-amber-300/30 dark:hover:bg-white/10"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-base font-black text-slate-950 dark:text-white">{variant.name}</div>
+                        <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{variant.short_description || variant.duration_label || "Pilihan paket yang bisa diatur ulang admin dari dashboard."}</p>
                       </div>
-                      <div className="mt-1 text-xs text-slate-400">{plan.tagline}</div>
-                      <div className="mt-2 text-xs leading-5 text-slate-300">
-                        RAM {plan.memoryMb === 0 ? "Unlimited" : `${Math.round(plan.memoryMb / 1024)}GB`} • Disk {plan.diskMb === 0 ? "Unlimited" : `${Math.max(1, Math.round(plan.diskMb / 1024))}GB`} • CPU {plan.cpuPercent === 0 ? "Unlimited" : `${plan.cpuPercent}%`}
+                      <div className="text-right">
+                        {variant.compare_at_price ? <div className="text-xs font-semibold text-slate-400 line-through dark:text-slate-500">{formatRupiah(Number(variant.compare_at_price))}</div> : null}
+                        <div className="text-lg font-black text-slate-950 dark:text-white">{formatRupiah(Number(variant.price || 0))}</div>
                       </div>
-                    </button>
-                  );
-                })}
-              </div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
-        )}
+        ) : null}
 
-        <a
-          href={`https://t.me/${SITE.autoOrderBotUsername}`}
-          target="_blank"
-          rel="noreferrer"
-          className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300 transition hover:bg-white/10"
-        >
-          <span>Atau buat order lewat bot auto order @{SITE.autoOrderBotUsername}</span>
-          <ExternalLink className="h-4 w-4" />
-        </a>
-
-        <div className="space-y-2">
-          <label className="text-sm text-slate-300">Kode kupon (opsional)</label>
-          <Input
-            placeholder="Contoh: WELCOME10"
-            value={couponCode}
-            onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-          />
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-slate-800 dark:text-slate-100">Nama pembeli</label>
+            <Input value={buyerName} onChange={(event) => setBuyerName(event.target.value)} placeholder="Nama lengkap" />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-slate-800 dark:text-slate-100">Email aktif</label>
+            <Input value={buyerEmail} onChange={(event) => setBuyerEmail(event.target.value)} placeholder="email@anda.com" />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-slate-800 dark:text-slate-100">Nomor WhatsApp / Telegram</label>
+            <Input value={buyerPhone} onChange={(event) => setBuyerPhone(event.target.value)} placeholder="Opsional" />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-slate-800 dark:text-slate-100">Kode promo</label>
+            <Input value={couponCode} onChange={(event) => setCouponCode(event.target.value.toUpperCase())} placeholder="Opsional" />
+          </div>
         </div>
 
         <div className="space-y-2">
-          <div className="text-sm text-slate-300">Pilih pembayaran</div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <button
-              type="button"
-              onClick={() => setPaymentMethod("qris")}
-              className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
-                paymentMethod === "qris"
-                  ? "border-brand-400 bg-brand-500/10 text-white"
-                  : "border-white/10 bg-white/5 text-slate-300"
-              }`}
-            >
-              <div className="font-semibold">QRIS</div>
-              <div className="mt-1 text-xs text-slate-400">QRIS dinamis, langsung tampil</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => setPaymentMethod("midtrans")}
-              className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
-                paymentMethod === "midtrans"
-                  ? "border-brand-400 bg-brand-500/10 text-white"
-                  : "border-white/10 bg-white/5 text-slate-300"
-              }`}
-            >
-              <div className="font-semibold">Midtrans</div>
-              <div className="mt-1 text-xs text-slate-400">GoPay, ShopeePay, virtual account</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => setPaymentMethod("balance")}
-              className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
-                paymentMethod === "balance"
-                  ? "border-emerald-400 bg-emerald-500/10 text-white"
-                  : "border-white/10 bg-white/5 text-slate-300"
-              }`}
-            >
-              <div className="flex items-center gap-2 font-semibold">
-                <Wallet className="h-4 w-4" />
-                Saldo
-              </div>
-              <div className="mt-1 text-xs text-slate-400">Saldo tersedia {formatRupiah(userBalance)}</div>
-            </button>
+          <label className="text-sm font-semibold text-slate-800 dark:text-slate-100">Catatan tambahan</label>
+          <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Contoh: tolong proses ke email tertentu atau tambahkan catatan singkat lainnya." className="min-h-[110px] rounded-3xl" />
+        </div>
+
+        <div className="rounded-[28px] border border-slate-200/80 bg-slate-50/90 p-5 dark:border-white/10 dark:bg-white/5">
+          <div className="flex items-center justify-between gap-4 text-sm text-slate-600 dark:text-slate-300">
+            <span>Paket terpilih</span>
+            <span className="font-semibold text-slate-900 dark:text-white">{selectedVariant?.name || product.name}</span>
+          </div>
+          {compareAt > amount ? (
+            <div className="mt-2 flex items-center justify-between gap-4 text-sm text-slate-500 dark:text-slate-400">
+              <span>Harga normal</span>
+              <span className="line-through">{formatRupiah(compareAt)}</span>
+            </div>
+          ) : null}
+          <div className="mt-3 flex items-end justify-between gap-4">
+            <div>
+              <div className="text-xs font-black uppercase tracking-[0.24em] text-slate-400 dark:text-slate-500">Bayar sekarang</div>
+              <div className="mt-1 text-3xl font-black tracking-tight text-slate-950 dark:text-white">{formatRupiah(amount)}</div>
+            </div>
+            <div className="rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] text-amber-700 dark:border-amber-300/20 dark:bg-amber-300/10 dark:text-amber-300">QRIS Midtrans</div>
           </div>
         </div>
 
-        <Button className="w-full" disabled={buttonDisabled} onClick={handleCheckout}>
-          {loading ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Memproses...
-            </>
-          ) : paymentMethod === "balance" ? (
-            "Bayar dengan Saldo"
-          ) : paymentMethod === "qris" ? (
-            isPanel ? "Bayar QRIS & Buat Panel" : "Bayar dengan QRIS"
-          ) : isPanel ? (
-            "Buat Panel WA Sekarang"
-          ) : stock <= 0 ? (
-            "Stok Habis"
-          ) : (
-            "Beli Sekarang"
-          )}
+        {error ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-300">{error}</div> : null}
+
+        <Button onClick={handleCheckout} disabled={loading} className="h-14 w-full rounded-full text-base font-semibold shadow-[0_18px_40px_-24px_rgba(250,204,21,0.65)]">
+          {loading ? "Membuat QRIS..." : "Lanjut ke pembayaran"}
         </Button>
-      </Card>
-    </motion.div>
+        <p className="text-xs leading-6 text-slate-500 dark:text-slate-400">Pesanan diproses setelah server menerima status pembayaran yang valid. Jadi alurnya lebih aman untuk user dan admin.</p>
+      </CardContent>
+    </Card>
   );
 }

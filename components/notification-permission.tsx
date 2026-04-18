@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { BellRing, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export function NotificationPermission() {
+export default function NotificationPermission() {
   const [show, setShow] = useState(false);
   useEffect(() => {
     if (typeof window === 'undefined' || !("Notification" in window) || !("serviceWorker" in navigator)) return;

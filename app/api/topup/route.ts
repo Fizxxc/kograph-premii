@@ -1,8 +1,8 @@
-import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-import { midtransSnap } from "@/lib/midtrans";
+import { createMidtransQrisTransaction } from "@/lib/midtrans";
+import { createOrderId, createPublicOrderCode } from "@/lib/orders";
 
 export async function POST(request: Request) {
   try {
@@ -11,34 +11,53 @@ export async function POST(request: Request) {
     const {
       data: { user }
     } = await supabase.auth.getUser();
+
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const body = await request.json();
-    const amount = Number(body.amount ?? 0);
-    if (!Number.isFinite(amount) || amount < 10000)
-      return NextResponse.json({ error: "Minimal top up Rp10.000" }, { status: 400 });
+    const body = await request.json().catch(() => ({}));
+    const amount = Number(body.amount || 0);
+    if (!Number.isFinite(amount) || amount < 10000) {
+      return NextResponse.json({ error: "Minimal top up Rp10.000." }, { status: 400 });
+    }
 
-    const { data: profile } = await admin.from("profiles").select("full_name").eq("id", user.id).single();
-    const orderId = `KGP-TOPUP-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
-    const snap = await midtransSnap.createTransaction({
-      transaction_details: { order_id: orderId, gross_amount: amount },
-      enabled_payments: ["qris", "gopay", "shopeepay", "bca_va", "bni_va", "permata_va"],
-      item_details: [{ id: orderId, price: amount, quantity: 1, name: "Top Up Saldo Kograph" }],
-      customer_details: {
-        first_name: (profile as any)?.full_name || user.email?.split("@")[0] || "Customer",
+    const { data: profile } = await admin.from("profiles").select("full_name").eq("id", user.id).maybeSingle();
+    const orderId = createOrderId("KGP-TOPUP");
+    const publicOrderCode = createPublicOrderCode();
+    const qris = await createMidtransQrisTransaction({
+      orderId,
+      amount,
+      itemDetails: [{ id: orderId, price: amount, quantity: 1, name: "Top Up Saldo Kograph Premium" }],
+      customerDetails: {
+        first_name: String(profile?.full_name || user.email || "Customer").slice(0, 40),
         email: user.email || undefined
-      }
-    } as any);
+      },
+      expiryMinutes: 15
+    });
+
     const { error } = await admin.from("wallet_topups").insert({
       order_id: orderId,
       user_id: user.id,
       amount,
       status: "pending",
-      snap_token: snap.token
+      snap_token: qris.transactionId || qris.qrUrl || "QRIS_PENDING",
+      public_order_code: publicOrderCode,
+      gateway_reference: qris.transactionId || null,
+      gateway_payload: qris.raw
     });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ success: true, orderId, redirectUrl: snap.redirect_url, snapToken: snap.token });
-  } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Top up gagal" }, { status: 500 });
+    if (error) throw new Error(error.message);
+
+    return NextResponse.json({
+      success: true,
+      orderId,
+      publicOrderCode,
+      redirectUrl: `/waiting-payment/${orderId}?resi=${encodeURIComponent(publicOrderCode)}&type=topup`,
+      paymentMethod: "qris",
+      paymentQrUrl: qris.qrUrl,
+      paymentDeeplinkUrl: qris.deeplinkUrl,
+      paymentActions: qris.actions,
+      amount
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message || "Gagal membuat transaksi top up." }, { status: 500 });
   }
 }
