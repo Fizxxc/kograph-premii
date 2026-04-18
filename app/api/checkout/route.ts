@@ -4,8 +4,16 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createMidtransQrisTransaction } from "@/lib/midtrans";
 import { createOrderId, createPublicOrderCode, createStatusToken, buildPublicOrderUrl } from "@/lib/orders";
 
+type CouponType = "fixed" | "percentage";
+
+type MidtransAction = {
+  name?: string | null;
+  method?: string | null;
+  url?: string | null;
+};
+
 function calculateDiscount(input: {
-  type: "fixed" | "percentage";
+  type: CouponType;
   value: number;
   baseAmount: number;
   maxDiscount: number | null;
@@ -15,10 +23,15 @@ function calculateDiscount(input: {
   return Math.max(0, Math.min(discount, input.baseAmount));
 }
 
+function getActionUrl(actions: MidtransAction[] | null | undefined, actionName: string) {
+  return (actions || []).find((item) => item?.name === actionName)?.url || null;
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = createServerSupabaseClient();
     const admin = createAdminSupabaseClient();
+
     const {
       data: { user }
     } = await supabase.auth.getUser();
@@ -32,19 +45,22 @@ export async function POST(request: Request) {
     const buyerName = String(body.buyerName || "").trim();
     const buyerEmail = String(body.buyerEmail || "").trim().toLowerCase();
     const buyerPhone = String(body.buyerPhone || "").trim() || null;
-    const paymentMethod = "qris";
+    const buyerNote = String(body.buyerNote || body.note || "").trim() || null;
 
     if (!productId) {
       return NextResponse.json({ error: "Produk wajib dipilih." }, { status: 400 });
     }
 
     if (!user && (!buyerName || !buyerEmail)) {
-      return NextResponse.json({ error: "Nama dan email wajib diisi agar pesanan guest tetap bisa dilacak dan menerima bukti transaksi." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Nama dan email wajib diisi agar pesanan guest tetap bisa dilacak dan menerima bukti transaksi." },
+        { status: 400 }
+      );
     }
 
     const { data: product, error: productError } = await admin
       .from("products")
-      .select("id, name, description, price, stock, category, image_url, service_type, is_active, pterodactyl_config, live_chat_enabled")
+      .select("id, name, description, price, stock, category, image_url, service_type, is_active")
       .eq("id", productId)
       .maybeSingle();
 
@@ -60,8 +76,8 @@ export async function POST(request: Request) {
       .order("sort_order", { ascending: true });
 
     const selectedVariant = variantId ? (variants || []).find((item: any) => item.id === variantId) || null : null;
-
     const baseAmount = Number(selectedVariant?.price || product.price || 0);
+
     if (!Number.isFinite(baseAmount) || baseAmount <= 0) {
       return NextResponse.json({ error: "Harga produk belum valid." }, { status: 400 });
     }
@@ -84,12 +100,13 @@ export async function POST(request: Request) {
       if (!coupon || !coupon.is_active || !isStarted || !isNotExpired || !quotaAvailable) {
         return NextResponse.json({ error: "Kupon tidak aktif atau sudah berakhir." }, { status: 400 });
       }
+
       if (baseAmount < Number(coupon.min_purchase || 0)) {
         return NextResponse.json({ error: "Minimal pembelian untuk kupon belum terpenuhi." }, { status: 400 });
       }
 
       discountAmount = calculateDiscount({
-        type: coupon.type as "fixed" | "percentage",
+        type: coupon.type as CouponType,
         value: Number(coupon.value),
         baseAmount,
         maxDiscount: coupon.max_discount ? Number(coupon.max_discount) : null
@@ -122,34 +139,6 @@ export async function POST(request: Request) {
       variant_metadata: selectedVariant?.metadata || null
     };
 
-    const baseInsert = {
-      order_id: orderId,
-      user_id: user?.id || null,
-      product_id: product.id,
-      variant_id: selectedVariant?.id || null,
-      amount: baseAmount,
-      discount_amount: discountAmount,
-      final_amount: finalAmount,
-      coupon_code: appliedCouponCode,
-      status: "pending",
-      status_token: statusToken,
-      public_order_code: publicOrderCode,
-      payment_method: paymentMethod,
-      payment_channel: "midtrans_qris",
-      telegram_id: telegramId,
-      snap_token: "PENDING",
-      guest_name: user ? null : buyerIdentity.name,
-      guest_email: user ? null : buyerIdentity.email,
-      guest_phone: user ? null : buyerIdentity.phone,
-      product_snapshot: productSnapshot,
-      fulfillment_data: {
-        requested_from: user ? "website-auth" : "website-guest",
-        room_id: roomId,
-        public_order_code: publicOrderCode,
-        public_order_url: publicOrderUrl
-      }
-    } as any;
-
     const itemName = `${product.name}${selectedVariant?.name ? ` • ${selectedVariant.name}` : ""}`.slice(0, 50);
     const qris = await createMidtransQrisTransaction({
       orderId,
@@ -163,24 +152,53 @@ export async function POST(request: Request) {
       expiryMinutes: 15
     });
 
-    const { error: txError } = await admin.from("transactions").insert({
-      ...baseInsert,
-      payment_method: "qris",
-      snap_token: qris.transactionId || qris.qrUrl || "QRIS_PENDING",
-      gateway_reference: qris.transactionId || null,
-      gateway_payload: qris.raw,
-      fulfillment_data: {
-        ...(baseInsert.fulfillment_data || {}),
-        payment_type: "qris",
-        payment_qr_url: qris.qrUrl || null,
-        payment_deeplink_url: qris.deeplinkUrl || null,
-        payment_actions: qris.actions || [],
-        payment_qr_string: qris.qrString || null,
-        qr_expires_in_minutes: 15
-      }
-    });
+    const actions = (Array.isArray(qris.actions) ? qris.actions : Array.isArray(qris.raw?.actions) ? qris.raw.actions : []) as MidtransAction[];
+    const qrUrl = qris.qrUrl || getActionUrl(actions, "generate-qr-code") || null;
+    const deeplinkUrl = qris.deeplinkUrl || getActionUrl(actions, "deeplink-redirect") || null;
+    const qrString = qris.qrString || qris.raw?.qr_string || null;
+    const midtransReference = qris.transactionId || qris.raw?.transaction_id || null;
 
-    if (txError) throw new Error(txError.message);
+    const transactionInsert = {
+      order_id: orderId,
+      user_id: user?.id || null,
+      product_id: product.id,
+      amount: baseAmount,
+      discount_amount: discountAmount,
+      final_amount: finalAmount,
+      coupon_code: appliedCouponCode,
+      status: "pending",
+      status_token: statusToken,
+      public_order_code: publicOrderCode,
+      payment_method: "qris",
+      payment_type: "qris",
+      buyer_name: buyerIdentity.name,
+      buyer_email: buyerIdentity.email,
+      buyer_phone: buyerIdentity.phone,
+      note: buyerNote,
+      product_snapshot: productSnapshot,
+      midtrans_reference: midtransReference,
+      gateway_payload: qris.raw || {},
+      fulfillment_data: {
+        requested_from: user ? "website-auth" : "website-guest",
+        room_id: roomId,
+        telegram_id: telegramId,
+        public_order_code: publicOrderCode,
+        public_order_url: publicOrderUrl,
+        payment_type: "qris",
+        payment_qr_url: qrUrl,
+        payment_deeplink_url: deeplinkUrl,
+        payment_actions: actions,
+        payment_qr_string: qrString,
+        qr_expires_in_minutes: 15,
+        selected_variant_id: selectedVariant?.id || null,
+        selected_variant_name: selectedVariant?.name || null
+      }
+    } as const;
+
+    const { error: txError } = await admin.from("transactions").insert(transactionInsert);
+    if (txError) {
+      throw new Error(txError.message);
+    }
 
     return NextResponse.json({
       success: true,
@@ -188,12 +206,16 @@ export async function POST(request: Request) {
       publicOrderCode,
       redirectUrl: `/waiting-payment/${orderId}?resi=${encodeURIComponent(publicOrderCode)}`,
       paymentMethod: "qris",
-      paymentQrUrl: qris.qrUrl,
-      paymentDeeplinkUrl: qris.deeplinkUrl,
-      paymentActions: qris.actions,
+      paymentQrUrl: qrUrl,
+      paymentQrString: qrString,
+      paymentDeeplinkUrl: deeplinkUrl,
+      paymentActions: actions,
       amount: finalAmount
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message || "Terjadi kesalahan saat memproses checkout." }, { status: 500 });
+    return NextResponse.json(
+      { error: error?.message || "Terjadi kesalahan saat memproses checkout." },
+      { status: 500 }
+    );
   }
 }
