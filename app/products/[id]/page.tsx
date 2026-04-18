@@ -3,7 +3,7 @@ import CheckoutCard from "@/components/checkout-card";
 import { Badge } from "@/components/ui/badge";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import LiveChatLauncher from "@/components/live-chat/live-chat-launcher";
+import { LiveChatLauncher } from "@/components/live-chat/live-chat-launcher";
 
 export default async function ProductDetailPage({ params }: { params: { id: string } }) {
   const admin = createAdminSupabaseClient();
